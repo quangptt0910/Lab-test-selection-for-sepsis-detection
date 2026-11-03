@@ -1,10 +1,19 @@
 # Template experiment config. Copy, change one thing, give it a new id.
 id: b2-001
-hypothesis: "Rank #1 hand-crafted features + U1-U0 target beat B0 rules on both hospital directions"
+hypothesis: "Rank #1 hand-crafted features + U1-U0 target beat B0 rules under pooled CV and cross-hospital"
 split:
-  directions: [A_to_B, B_to_A]
-  val_fraction: 0.2          # patients held out from the training hospital for threshold tuning
+  # Headline protocol for this run. run-experiment always scores both and logs both columns:
+  #   pooled_cv      optimistic:  80/20 dev/test (test untouched until final report), 5-fold patient CV on dev
+  #   cross_hospital pessimistic: train A -> test B and train B -> test A
+  protocol: pooled_cv
   seed: 0
+  pooled_cv:
+    test_fraction: 0.2
+    stratify_by: [hospital, septic]   # patient-level; ids are hospital-prefixed (A_p000001)
+    n_folds: 5
+  cross_hospital:
+    directions: [A_to_B, B_to_A]
+    val_fraction: 0.2        # patients held out from the training hospital for threshold tuning
 features:
   impute: ffill_nan_before_first
   hand_crafted: [shock_index, bun_cr, partial_sofa, partial_sofa_delta_24h, hours_since_panel]

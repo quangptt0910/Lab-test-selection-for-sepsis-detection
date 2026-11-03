@@ -22,7 +22,9 @@ Other top-level folders: `configs/`, `experiments/`, `tests/`. `data/raw/` is re
 
 ## Hard rules (breaking any one invalidates a result)
 - IMPORTANT: features at hour t may use only rows ≤ t **and** only labs the replay has revealed. Code in `features/` and `action/` must never read the full record.
-- Split by patient. Report hospital-held-out results (train A → test B, and B → A). One patient's hours never cross folds.
+- Split by patient, never by row. Primary: 80/20 dev/test stratified by hospital × septic, 5-fold
+  patient-level CV on dev. Secondary: cross-hospital A→B and B→A. Report per-hospital utility for both.
+  The test set is touched only for the final report.
 - Fit every statistic (fill means, scalers, alarm threshold) on the training/validation fold only.
 - `SepsisLabel` is already shifted 6 h early, so t_sepsis = first label-1 row + 6. Never shift again.
 - Utility comes only from the official scorer in `third_party/`, unmodified. Tune the alarm threshold on validation, then freeze it for all replay comparisons.
@@ -37,7 +39,7 @@ Other top-level folders: `configs/`, `experiments/`, `tests/`. `data/raw/` is re
 - Details and formulas live in the `rank1-features` skill.
 
 ## Code style
-- Python 3.11, type hints on public functions, pandas
+- Python, type hints on public functions, pandas
 - Feature, label and guideline-rule functions are pure. I/O stays at the edges (CLI modules).
 - Windows, thresholds and costs go in `configs/*.yaml`, never as literals in code.
 - Tests use small hand-built patient tables, never real patient files.
