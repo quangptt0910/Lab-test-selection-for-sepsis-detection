@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(make check)",
+      "Bash(make test)",
+      "Bash(make lint)",
+      "Bash(uv run pytest *)",
+      "Bash(uv run ruff *)",
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)"
+    ],
+    "deny": [
+      "Edit(./data/raw/**)",
+      "Edit(./third_party/**)",
+      "Read(./.env)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/ruff_after_edit.py\""
+          }
+        ]
+      }
+    ]
+  }
+}

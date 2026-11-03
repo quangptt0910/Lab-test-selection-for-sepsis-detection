@@ -1,0 +1,16 @@
+/data/
+/runs/
+*.parquet
+*.psv
+.venv/
+__pycache__/
+.env
+CLAUDE.local.md
+.claude/settings.local.json
+
+# Skills: ignore all, then allow only the project's own
+.claude/skills/*
+!.claude/skills/rank1-features/
+!.claude/skills/run-experiment/
+!.claude/skills/add-guideline-rule/
+!.claude/skills/milestones-to-issues/

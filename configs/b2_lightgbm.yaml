@@ -1,0 +1,18 @@
+# Template experiment config. Copy, change one thing, give it a new id.
+id: b2-001
+hypothesis: "Rank #1 hand-crafted features + U1-U0 target beat B0 rules on both hospital directions"
+split:
+  directions: [A_to_B, B_to_A]
+  val_fraction: 0.2          # patients held out from the training hospital for threshold tuning
+  seed: 0
+features:
+  impute: ffill_nan_before_first
+  hand_crafted: [shock_index, bun_cr, partial_sofa, partial_sofa_delta_24h, hours_since_panel]
+  vital_windows_h: [6]       # rolling max/min
+  signatures: null           # B3: {window_h: 8, depth: 2, channels: [partial_sofa, MAP, bun_cr]}
+  lab_masking_p: 0.3         # random lab hiding during training (ADR-0002)
+target: utility_diff         # U1 - U0
+model:
+  type: lightgbm_regressor
+  params: {n_estimators: 500, learning_rate: 0.05, num_leaves: 63, min_child_samples: 100}
+note: ""
