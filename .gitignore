@@ -10,6 +10,7 @@ CLAUDE.local.md
 
 # Skills: ignore all, then allow only the project's own
 .claude/skills/*
+.agents/*
 !.claude/skills/rank1-features/
 !.claude/skills/run-experiment/
 !.claude/skills/add-guideline-rule/
