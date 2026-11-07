@@ -143,12 +143,15 @@ def load_project_split(
     *,
     part: str = "dev",
     final_eval: bool = False,
-    data_config: Path = DATA_CONFIG,
-    protocol_config: Path = PROTOCOL_CONFIG,
+    _data_config: Path = DATA_CONFIG,
+    _protocol_config: Path = PROTOCOL_CONFIG,
 ) -> pd.DataFrame:
-    """The project's split, verified against `split.fingerprint` (paths from configs/)."""
-    path = Path(load_yaml(data_config)["split_path"])
-    raw = load_yaml(protocol_config)["split"].get("fingerprint")
+    """The project's split, verified against `split.fingerprint` (paths from configs/).
+
+    `_data_config` and `_protocol_config` exist for tests only; never pass them elsewhere.
+    """
+    path = Path(load_yaml(_data_config)["split_path"])
+    raw = load_yaml(_protocol_config)["split"].get("fingerprint")
     expected = None if raw is None else str(raw)
     return load_split(path, expected, part=part, final_eval=final_eval)
 
@@ -163,21 +166,22 @@ def load_patient_hours(
     patient_ids: Iterable[str],
     *,
     final_eval: bool = False,
-    data_config: Path = DATA_CONFIG,
-    protocol_config: Path = PROTOCOL_CONFIG,
+    _data_config: Path = DATA_CONFIG,
+    _protocol_config: Path = PROTOCOL_CONFIG,
 ) -> pd.DataFrame:
     """Patient-hour rows of the requested patients that belong to `hospitals`.
 
     The patients are checked against the project's split file, verified by its fingerprint:
     without `final_eval=True` every requested patient must be a dev patient there, whatever the
     caller's own table says. Only the requested patients are read from the cache, and an error is
-    raised if any of them is missing from it.
+    raised if any of them is missing from it. `_data_config` and `_protocol_config` exist for
+    tests only; never pass them elsewhere.
     """
     verified = load_project_split(
         part="all" if final_eval else "dev",
         final_eval=final_eval,
-        data_config=data_config,
-        protocol_config=protocol_config,
+        _data_config=_data_config,
+        _protocol_config=_protocol_config,
     )
     requested = set(patient_ids)
     unknown = sorted(requested - set(verified["patient_id"]))
@@ -192,7 +196,7 @@ def load_patient_hours(
         )
 
     wanted = verified[verified["patient_id"].isin(requested) & verified["hospital"].isin(hospitals)]
-    cache_dir = Path(load_yaml(data_config)["cache_dir"])
+    cache_dir = Path(load_yaml(_data_config)["cache_dir"])
     hours = read_cache_patients(hospitals, cache_dir, wanted["patient_id"])
     missing = sorted(set(wanted["patient_id"]) - set(hours["patient_id"]))
     if missing:

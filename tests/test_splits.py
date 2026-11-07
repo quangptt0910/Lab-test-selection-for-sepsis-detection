@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from sepsis.data import load as load_module
 from sepsis.data import make_split as make_split_cli
 from sepsis.data.build_cache import save_cache
 from sepsis.data.load import cache_path, read_cache_patients
@@ -186,7 +185,10 @@ def _project(tmp_path: Path, fingerprint_value: str | None = None) -> tuple[dict
     cache_dir, split = _cache(tmp_path)
     write_split(split, tmp_path / "splits" / "split.csv")
     _configs(tmp_path, cache_dir, fingerprint_value or fingerprint(split))
-    configs = {"data_config": tmp_path / "data.yaml", "protocol_config": tmp_path / "protocol.yaml"}
+    configs = {
+        "_data_config": tmp_path / "data.yaml",
+        "_protocol_config": tmp_path / "protocol.yaml",
+    }
     return configs, split
 
 
@@ -203,11 +205,27 @@ def test_load_patient_hours_returns_dev_rows_only(tmp_path: Path) -> None:
 
 def test_load_patient_hours_refuses_test_patients_even_if_relabelled(tmp_path: Path) -> None:
     configs, split = _project(tmp_path)
-    relabelled = split.assign(split="dev")  # a caller-built table cannot unlock test patients
+    # Only ids are passed, so a caller-built table that labels test patients as dev changes nothing.
+    test_ids = split.loc[split["split"] == "test", "patient_id"]
     with pytest.raises(TestSplitLockedError):
-        load_patient_hours(["A", "B"], relabelled["patient_id"], **configs)
+        load_patient_hours(["A", "B"], test_ids, **configs)  # test patients only
+    with pytest.raises(TestSplitLockedError):
+        load_patient_hours(["A", "B"], split["patient_id"], **configs)  # mixed with dev
     hours = load_patient_hours(["A", "B"], split["patient_id"], final_eval=True, **configs)
     assert len(hours) == 60
+
+
+def test_load_patient_hours_refuses_unknown_patients_in_final_eval(tmp_path: Path) -> None:
+    configs, _ = _project(tmp_path)
+    with pytest.raises(ValueError, match="A_p999999"):
+        load_patient_hours(["A"], ["A_p999999"], final_eval=True, **configs)
+
+
+def test_load_patient_hours_with_no_patients_of_those_hospitals(tmp_path: Path) -> None:
+    configs, split = _project(tmp_path)
+    b_dev = split.loc[(split["split"] == "dev") & (split["hospital"] == "B"), "patient_id"]
+    assert load_patient_hours(["A"], b_dev, **configs).empty
+    assert load_patient_hours(["A", "B"], [], **configs).empty
 
 
 def test_load_patient_hours_checks_the_fingerprint(tmp_path: Path) -> None:
@@ -218,13 +236,19 @@ def test_load_patient_hours_checks_the_fingerprint(tmp_path: Path) -> None:
 
 def test_load_patient_hours_never_reads_all_patients(tmp_path: Path, monkeypatch) -> None:
     configs, split = _project(tmp_path)
+    calls = []
+    real_read_parquet = pd.read_parquet
 
-    def boom(*args, **kwargs):
-        raise AssertionError("read_cache loads every patient")
+    def spy(path, *args, **kwargs):
+        calls.append(kwargs.get("filters"))
+        return real_read_parquet(path, *args, **kwargs)
 
-    monkeypatch.setattr(load_module, "read_cache", boom)
+    monkeypatch.setattr(pd, "read_parquet", spy)
     dev = split[split["split"] == "dev"]
     assert len(load_patient_hours(["A", "B"], dev["patient_id"], **configs)) == 3 * len(dev)
+    assert len(calls) == 2  # one read per hospital cache, each filtered to the dev ids
+    for filters in calls:
+        assert filters == [("patient_id", "in", sorted(dev["patient_id"]))]
 
 
 def test_read_cache_patients_returns_only_requested(tmp_path: Path) -> None:

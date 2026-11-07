@@ -16,6 +16,7 @@ from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
 
 import pandas as pd
+import pyarrow.parquet as pq
 
 HOSPITALS = ("A", "B")
 HOSPITAL_DIRS = {
@@ -102,8 +103,8 @@ def read_cache_patients(
     It does not check who may be read: use `sepsis.data.splits.load_patient_hours`, which does.
     """
     ids = sorted(set(patient_ids))
-    frames = [
-        pd.read_parquet(_existing_cache(cache_dir, name), filters=[("patient_id", "in", ids)])
-        for name in hospitals
-    ]
+    paths = [_existing_cache(cache_dir, name) for name in hospitals]
+    if not ids:  # an empty "in" filter fails in pyarrow; return the empty table instead
+        return pq.read_schema(paths[0]).empty_table().to_pandas()
+    frames = [pd.read_parquet(path, filters=[("patient_id", "in", ids)]) for path in paths]
     return pd.concat(frames, ignore_index=True)
