@@ -32,6 +32,7 @@ Place the PhysioNet/CinC 2019 files here (they are never committed):
 data/training_setA/training_setA/p*.psv
 data/training_setB/training_setB/p*.psv
 ```
+These folders are read-only. Each hospital is split once into a dev part (80%) and a test part (20%). Models are compared in three setups (A → B, B → A and a mix of both) on dev data, and the test parts are used only for the final evaluation. See `docs/adr/0004-cross-hospital-evaluation-setup.md`.
 
 ## Run
 Inspect the dataset (patients per hospital, hours per patient, % septic, % missing per column):
@@ -56,6 +57,13 @@ In VS Code, add to `.vscode/settings.json` to use the Testing panel:
   "python.testing.pytestEnabled": true,
   "python.testing.pytestArgs": ["-m", "not slow", "tests"]
 }
+```
+
+## Issues and project board
+Work is tracked in GitHub Issues. The plan lives in `scripts/create_github_issues.py`, which syncs the issues, labels, milestones and the "Sepsis ML Project" board. It needs the GitHub CLI (`gh auth login`, then `gh auth refresh -s project`):
+```bash
+python scripts/create_github_issues.py --dry-run   # preview
+python scripts/create_github_issues.py             # apply
 ```
 
 ## Rules

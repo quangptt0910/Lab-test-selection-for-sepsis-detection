@@ -4,7 +4,8 @@ Shared vocabulary for code, docs, tickets and prompts. If a term changes, change
 
 ## Data
 - **Patient-hour**: one row of a `.psv` file. Predictions are made for every patient-hour.
-- **Hospital A / B**: `training_setA` / `training_setB`. They come from different hospital systems and are used for hospital-held-out evaluation. The hidden hospital C is not available.
+- **Hospital A / B**: `training_setA` / `training_setB`. They come from different hospital systems and are loaded separately. The hidden hospital C is not available.
+- **Dev / test part**: each hospital's 80% / 20% patient split (A-dev, A-test, B-dev, B-test), stratified by septic. Test parts are used once, in the final evaluation (ADR-0004).
 - **ICULOS**: hours since ICU admission. On its own it is the strongest single predictor.
 - **SepsisLabel**: 1 from 6 h *before* clinical onset onward (septic patients only). It is already shifted.
 - **t_sepsis**: clinical onset hour = first SepsisLabel=1 row + 6.
@@ -38,6 +39,8 @@ Shared vocabulary for code, docs, tickets and prompts. If a term changes, change
 - **Utility (U)**: the official per-hour points. **Normalized utility**: (observed − inaction) / (best − inaction) over the whole dataset.
 - **U1 / U0**: utility of predicting alarm / no alarm for one patient-hour. **U1 − U0** is the rank #1 regression target.
 - **Labs per patient-day**: test burden metric reported next to utility.
+- **Setup**: how a model is trained and evaluated across hospitals (ADR-0004). **A → B**: train on A-dev, evaluate on B. **B → A**: the reverse. **Mix**: train on A-dev + B-dev with CV, report A and B patients separately (**mix → A**, **mix → B**). Mix is the optimistic number; A → B and B → A are the pessimistic ones.
+- **Training side**: the patients a setup trains and tunes on. Every fitted statistic, including the alarm threshold, comes from here.
 
 ## Guideline layer
 - **Rule**: YAML record with trigger, condition, action, source and provenance.

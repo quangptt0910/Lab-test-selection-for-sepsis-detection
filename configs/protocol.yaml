@@ -1,0 +1,14 @@
+# Project-wide evaluation protocol (ADR-0004). Shared by every experiment, never copied into experiment configs.
+# Do not change these values once the split has been created or any experiment has been logged.
+
+split:
+  seed: 0
+  test_fraction: 0.2            # per hospital, patient-level
+  stratify_by: [septic]
+  # The split is created once from these settings and stored as patient-id lists (gitignored).
+  # Experiments load the lists; they never re-split.
+
+selection:
+  # Keep a change only if mix improves and neither A->B nor B->A drops by more than this (utility).
+  # project_assumption: fixed before the first comparison; do not change per experiment.
+  cross_hospital_tolerance: 0.01
