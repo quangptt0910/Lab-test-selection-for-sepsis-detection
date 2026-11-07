@@ -12,7 +12,7 @@ Every experiment runs all three setups on **dev data only** (ADR-0004). Each hos
 - `B_to_A` (pessimistic): train and tune on B-dev, evaluate on A-dev.
 - `mix` (optimistic): nested CV over the stored folds on A-dev + B-dev, reported separately for A and B patients.
 
-Patients and folds come only from the split file, through `sepsis.data.splits` (`load_split()`, `cross_hospital()`, `mix_folds()`). Never create folds or splits inside an experiment.
+Patients and folds come only from the split file, through `sepsis.data.splits` (`load_project_split()`, then `cross_hospital()` or `mix_folds()`; patient-hours via `load_patient_hours(hospitals, patient_ids)`). Never create folds or splits inside an experiment.
 
 1. **Pre-flight**
    - The config exists and has `id`, `hypothesis`, `model`, `features`, `split` (with `split.setups`).

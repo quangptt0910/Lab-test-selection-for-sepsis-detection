@@ -4,9 +4,10 @@ Each hospital is read and cached separately, and can be read alone or together w
 Rows keep each file's order: the official scorer matches predictions to labels by row position,
 so tables are never re-sorted by ICULOS.
 
-WARNING: the `read_*` functions here return ALL patients, test patients included. Only
-`build_cache`, `make_split` and the final evaluation may call them. Everything else gets
-patient-hours through `sepsis.data.splits.load_patient_hours`, which returns dev patients only.
+WARNING: `read_raw_hospital`, `read_raw_all` and `read_cache` return ALL patients, test patients
+included. Only `build_cache`, `make_split` and the final evaluation may call them. Everything else
+gets patient-hours through `sepsis.data.splits.load_patient_hours`, which checks the requested
+patients against the verified split and reads only those (`read_cache_patients`).
 """
 
 from __future__ import annotations
@@ -77,15 +78,32 @@ def cache_path(cache_dir: Path, name: str) -> Path:
     return Path(cache_dir) / f"hospital_{name}.parquet"
 
 
+def _existing_cache(cache_dir: Path, name: str) -> Path:
+    _check_hospital(name)
+    path = cache_path(cache_dir, name)
+    if not path.exists():
+        raise FileNotFoundError(
+            f"missing cache {path}; build it with: uv run python -m sepsis.data.build_cache"
+        )
+    return path
+
+
 def read_cache(hospitals: Sequence[str], cache_dir: Path) -> pd.DataFrame:
     """Read the parquet cache of the given hospitals (ALL patients, test included)."""
-    frames = []
-    for name in hospitals:
-        _check_hospital(name)
-        path = cache_path(cache_dir, name)
-        if not path.exists():
-            raise FileNotFoundError(
-                f"missing cache {path}; build it with: uv run python -m sepsis.data.build_cache"
-            )
-        frames.append(pd.read_parquet(path))
+    frames = [pd.read_parquet(_existing_cache(cache_dir, name)) for name in hospitals]
+    return pd.concat(frames, ignore_index=True)
+
+
+def read_cache_patients(
+    hospitals: Sequence[str], cache_dir: Path, patient_ids: Iterable[str]
+) -> pd.DataFrame:
+    """Read only the given patients from the cache; other patients are never loaded.
+
+    It does not check who may be read: use `sepsis.data.splits.load_patient_hours`, which does.
+    """
+    ids = sorted(set(patient_ids))
+    frames = [
+        pd.read_parquet(_existing_cache(cache_dir, name), filters=[("patient_id", "in", ids)])
+        for name in hospitals
+    ]
     return pd.concat(frames, ignore_index=True)

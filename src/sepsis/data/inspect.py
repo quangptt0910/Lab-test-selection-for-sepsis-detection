@@ -14,9 +14,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from sepsis.config import DATA_CONFIG, load_yaml
 from sepsis.data.load import HOSPITAL_DIRS, ID_COLUMNS, iter_patients
-from sepsis.data.splits import SplitFingerprintError, load_patient_hours, load_project_split
+from sepsis.data.splits import (
+    IncompleteCacheError,
+    SplitFingerprintError,
+    load_patient_hours,
+    load_project_split,
+)
 
 
 def load_patients(hospital_dir: Path) -> Iterator[pd.DataFrame]:
@@ -71,10 +75,9 @@ def main(argv: list[str] | None = None) -> int:
     # Dev patients only (ADR-0004): needs the cache and the split.
     try:
         split = load_project_split()
-        cache_dir = Path(load_yaml(DATA_CONFIG)["cache_dir"])
         names = [args.hospital] if args.hospital else sorted(HOSPITAL_DIRS)
-        hours = load_patient_hours(names, split, cache_dir)
-    except (FileNotFoundError, SplitFingerprintError) as error:
+        hours = load_patient_hours(names, split["patient_id"])
+    except (FileNotFoundError, SplitFingerprintError, IncompleteCacheError) as error:
         print(f"{error}\nRun build_cache and make_split first (see README).", file=sys.stderr)
         return 1
 

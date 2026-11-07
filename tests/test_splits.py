@@ -4,9 +4,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from sepsis.data import load as load_module
 from sepsis.data import make_split as make_split_cli
 from sepsis.data.build_cache import save_cache
+from sepsis.data.load import cache_path, read_cache_patients
 from sepsis.data.splits import (
+    IncompleteCacheError,
     SplitFingerprintError,
     TestSplitLockedError,
     cross_hospital,
@@ -178,21 +181,83 @@ def _cache(tmp_path: Path) -> tuple[Path, pd.DataFrame]:
     return cache_dir, split
 
 
-def test_load_patient_hours_returns_dev_rows_only(tmp_path: Path) -> None:
+def _project(tmp_path: Path, fingerprint_value: str | None = None) -> tuple[dict, pd.DataFrame]:
+    """Cache, committed split file and configs, as in the real project (all under tmp_path)."""
     cache_dir, split = _cache(tmp_path)
+    write_split(split, tmp_path / "splits" / "split.csv")
+    _configs(tmp_path, cache_dir, fingerprint_value or fingerprint(split))
+    configs = {"data_config": tmp_path / "data.yaml", "protocol_config": tmp_path / "protocol.yaml"}
+    return configs, split
+
+
+def test_load_patient_hours_returns_dev_rows_only(tmp_path: Path) -> None:
+    configs, split = _project(tmp_path)
     dev = split[split["split"] == "dev"]
-    hours = load_patient_hours(["A", "B"], dev, cache_dir)
+    hours = load_patient_hours(["A", "B"], dev["patient_id"], **configs)
     assert set(hours["patient_id"]) == set(dev["patient_id"])
     assert len(hours) == 3 * len(dev)
-    a_only = load_patient_hours(["A"], dev, cache_dir)
+    a_only = load_patient_hours(["A"], dev["patient_id"], **configs)
     assert (a_only["hospital"] == "A").all()
+    assert set(a_only["patient_id"]) == set(dev.loc[dev["hospital"] == "A", "patient_id"])
 
 
-def test_load_patient_hours_refuses_test_patients(tmp_path: Path) -> None:
-    cache_dir, split = _cache(tmp_path)
+def test_load_patient_hours_refuses_test_patients_even_if_relabelled(tmp_path: Path) -> None:
+    configs, split = _project(tmp_path)
+    relabelled = split.assign(split="dev")  # a caller-built table cannot unlock test patients
     with pytest.raises(TestSplitLockedError):
-        load_patient_hours(["A", "B"], split, cache_dir)
-    assert len(load_patient_hours(["A", "B"], split, cache_dir, final_eval=True)) == 60
+        load_patient_hours(["A", "B"], relabelled["patient_id"], **configs)
+    hours = load_patient_hours(["A", "B"], split["patient_id"], final_eval=True, **configs)
+    assert len(hours) == 60
+
+
+def test_load_patient_hours_checks_the_fingerprint(tmp_path: Path) -> None:
+    configs, split = _project(tmp_path, fingerprint_value="f" * 64)
+    with pytest.raises(SplitFingerprintError):
+        load_patient_hours(["A"], split["patient_id"], **configs)
+
+
+def test_load_patient_hours_never_reads_all_patients(tmp_path: Path, monkeypatch) -> None:
+    configs, split = _project(tmp_path)
+
+    def boom(*args, **kwargs):
+        raise AssertionError("read_cache loads every patient")
+
+    monkeypatch.setattr(load_module, "read_cache", boom)
+    dev = split[split["split"] == "dev"]
+    assert len(load_patient_hours(["A", "B"], dev["patient_id"], **configs)) == 3 * len(dev)
+
+
+def test_read_cache_patients_returns_only_requested(tmp_path: Path) -> None:
+    cache_dir, _ = _cache(tmp_path)
+    out = read_cache_patients(["A", "B"], cache_dir, ["A_p000001", "B_p000003"])
+    assert set(out["patient_id"]) == {"A_p000001", "B_p000003"}
+    assert out["hour"].tolist() == [0, 1, 2, 0, 1, 2]  # row order kept
+
+
+def test_load_patient_hours_refuses_incomplete_cache(tmp_path: Path) -> None:
+    configs, split = _project(tmp_path)
+    dev = split[split["split"] == "dev"]
+    gone = dev.loc[dev["hospital"] == "A", "patient_id"].iloc[0]
+    path = cache_path(tmp_path / "cache", "A")
+    table = pd.read_parquet(path)
+    table[table["patient_id"] != gone].to_parquet(path, index=False)
+    with pytest.raises(IncompleteCacheError, match=gone):
+        load_patient_hours(["A", "B"], dev["patient_id"], **configs)
+
+
+@pytest.mark.parametrize("column", ["hospital", "septic"])
+def test_fingerprint_covers_hospital_and_septic(
+    split: pd.DataFrame, tmp_path: Path, column: str
+) -> None:
+    edited = split.copy()
+    edited.loc[0, column] = {"hospital": "B" if edited.loc[0, "hospital"] == "A" else "A"}.get(
+        column, 1 - edited.loc[0, "septic"]
+    )
+    assert fingerprint(edited) != fingerprint(split)
+    path = tmp_path / "split.csv"
+    write_split(edited, path)
+    with pytest.raises(SplitFingerprintError):
+        load_split(path, fingerprint(split))
 
 
 def _configs(tmp_path: Path, cache_dir: Path, fingerprint_value: str | None) -> list[str]:

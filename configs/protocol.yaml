@@ -8,7 +8,8 @@ split:
   stratify_by: [hospital, septic]
   # Created once by `python -m sepsis.data.make_split` (path in configs/data.yaml).
   # Set this to the fingerprint it prints; the loader then refuses any split file that differs.
-  fingerprint: bdd9ab186bc3923795361177d7579fae39230403bd7594aa2face5c7139ea6ea
+  # SHA-256 over every column (patient_id, hospital, septic, split, fold).
+  fingerprint: ec2e7a89a83e895696163989bacd3dac223438c2df47d449fba920cc540287cd
 
 selection:
   # Keep a change only if mix improves and neither A->B nor B->A drops by more than this (utility).

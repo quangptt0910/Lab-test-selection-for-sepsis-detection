@@ -54,7 +54,7 @@ With uv, prefix each command with `uv run`. Always use `-m`, not the file path (
    python -m sepsis.data.inspect --hospital A   # one hospital
    ```
 
-Paths are in `configs/data.yaml`, split settings in `configs/protocol.yaml`. Code gets patient-hours through `sepsis.data.splits.load_project_split()` and `load_patient_hours()`, which return dev patients only.
+Paths are in `configs/data.yaml`, split settings in `configs/protocol.yaml`. Code gets patient-hours through `sepsis.data.splits.load_project_split()` and `load_patient_hours(hospitals, patient_ids)`. The second checks every requested patient against the verified split file, refuses test patients, reads only those patients from the cache and fails if any are missing from it.
 
 ## Test and lint
 Run these after every change:

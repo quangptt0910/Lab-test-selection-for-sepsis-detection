@@ -18,12 +18,16 @@ import pandas as pd
 from sklearn.model_selection import StratifiedKFold, train_test_split
 
 from sepsis.config import DATA_CONFIG, PROTOCOL_CONFIG, load_yaml
-from sepsis.data.load import HOSPITALS, read_cache
+from sepsis.data.load import HOSPITALS, read_cache_patients
 
 SPLIT_COLUMNS = ["patient_id", "hospital", "septic", "split", "fold"]
 # Helpers drop `septic`: it is computed from the whole record and must not reach features.
 FOLD_COLUMNS = ["patient_id", "hospital", "fold"]
 PARTS = ("dev", "test", "all")
+
+
+class IncompleteCacheError(RuntimeError):
+    """Raised when the cache lacks patients that the split file lists."""
 
 
 class TestSplitLockedError(RuntimeError):
@@ -77,11 +81,13 @@ def make_split(
 
 
 def fingerprint(split: pd.DataFrame) -> str:
-    """SHA-256 of the sorted `(patient_id, split, fold)` rows."""
+    """SHA-256 of the sorted `(patient_id, hospital, septic, split, fold)` rows: every column."""
     rows = split.sort_values("patient_id")
     lines = (
-        f"{pid},{part},{'' if pd.isna(fold) else int(fold)}"
-        for pid, part, fold in zip(rows["patient_id"], rows["split"], rows["fold"], strict=True)
+        f"{pid},{hospital},{int(septic)},{part},{'' if pd.isna(fold) else int(fold)}"
+        for pid, hospital, septic, part, fold in zip(
+            *(rows[col] for col in SPLIT_COLUMNS), strict=True
+        )
     )
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
 
@@ -107,7 +113,7 @@ def load_split(
 
     Test rows (`part="test"` or `"all"`) are locked unless `final_eval=True`, which only the
     final evaluation may pass. The file must match `expected_fingerprint`; a missing fingerprint
-    is an error unless `allow_unverified=True` (only for `make_split` and tests).
+    is an error unless `allow_unverified=True`, which only tests may pass.
     """
     if part not in PARTS:
         raise ValueError(f"part must be one of {PARTS}")
@@ -133,10 +139,17 @@ def load_split(
     return split.reset_index(drop=True)
 
 
-def load_project_split(*, part: str = "dev", final_eval: bool = False) -> pd.DataFrame:
+def load_project_split(
+    *,
+    part: str = "dev",
+    final_eval: bool = False,
+    data_config: Path = DATA_CONFIG,
+    protocol_config: Path = PROTOCOL_CONFIG,
+) -> pd.DataFrame:
     """The project's split, verified against `split.fingerprint` (paths from configs/)."""
-    path = Path(load_yaml(DATA_CONFIG)["split_path"])
-    expected = load_yaml(PROTOCOL_CONFIG)["split"].get("fingerprint")
+    path = Path(load_yaml(data_config)["split_path"])
+    raw = load_yaml(protocol_config)["split"].get("fingerprint")
+    expected = None if raw is None else str(raw)
     return load_split(path, expected, part=part, final_eval=final_eval)
 
 
@@ -147,21 +160,47 @@ def rows_for(df: pd.DataFrame, patient_ids: Iterable[str]) -> pd.DataFrame:
 
 def load_patient_hours(
     hospitals: Sequence[str],
-    split: pd.DataFrame,
-    cache_dir: Path,
+    patient_ids: Iterable[str],
     *,
     final_eval: bool = False,
+    data_config: Path = DATA_CONFIG,
+    protocol_config: Path = PROTOCOL_CONFIG,
 ) -> pd.DataFrame:
-    """Patient-hour rows of the given hospitals, restricted to the patients in `split`.
+    """Patient-hour rows of the requested patients that belong to `hospitals`.
 
-    Pass the split from `load_project_split()`, which holds dev patients only. A split that
-    contains test patients is refused unless `final_eval=True`.
+    The patients are checked against the project's split file, verified by its fingerprint:
+    without `final_eval=True` every requested patient must be a dev patient there, whatever the
+    caller's own table says. Only the requested patients are read from the cache, and an error is
+    raised if any of them is missing from it.
     """
-    if (split["split"] != "dev").any() and not final_eval:
-        raise TestSplitLockedError(
-            "the split passed in contains test patients; only the final evaluation may load them"
+    verified = load_project_split(
+        part="all" if final_eval else "dev",
+        final_eval=final_eval,
+        data_config=data_config,
+        protocol_config=protocol_config,
+    )
+    requested = set(patient_ids)
+    unknown = sorted(requested - set(verified["patient_id"]))
+    if unknown:
+        if not final_eval:
+            raise TestSplitLockedError(
+                f"{len(unknown)} requested patients are not dev patients in the split file "
+                f"(e.g. {unknown[:3]}); test patients are locked until the final evaluation"
+            )
+        raise ValueError(
+            f"{len(unknown)} requested patients are not in the split file: {unknown[:3]}"
         )
-    return rows_for(read_cache(hospitals, cache_dir), split["patient_id"])
+
+    wanted = verified[verified["patient_id"].isin(requested) & verified["hospital"].isin(hospitals)]
+    cache_dir = Path(load_yaml(data_config)["cache_dir"])
+    hours = read_cache_patients(hospitals, cache_dir, wanted["patient_id"])
+    missing = sorted(set(wanted["patient_id"]) - set(hours["patient_id"]))
+    if missing:
+        raise IncompleteCacheError(
+            f"the cache in {cache_dir} lacks {len(missing)} patients of the split "
+            f"(e.g. {missing[:3]}); rebuild it with: uv run python -m sepsis.data.build_cache"
+        )
+    return hours
 
 
 def _dev(split: pd.DataFrame) -> pd.DataFrame:
