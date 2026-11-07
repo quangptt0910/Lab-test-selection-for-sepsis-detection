@@ -34,7 +34,9 @@ Other top-level folders: `configs/`, `experiments/`, `tests/`. The raw data in `
 - `SepsisLabel` is already shifted 6 h early, so t_sepsis = first label-1 row + 6. Never shift again.
 - Utility comes only from the official scorer in `third_party/`, unmodified. Tune the alarm threshold on validation, then freeze it for all replay comparisons.
 - No lab measurement-count or missing/present-pattern features, because they encode ordering behaviour (ADR-0002). Use `hours_since_<panel>` instead. Vitals are exempt.
-- Never commit data, patient files or model artifacts.
+- Never commit data, patient files or model artifacts. The one exception is the split file
+  `data/splits/split.csv` (patient ids, hospital, septic, split, fold; no patient-hours), committed so everyone
+  uses the same split (ADR-0004).
 
 ## Modelling defaults (rank #1 recipe, ADR-0001)
 - Forward-fill within patient. Leave NaN before the first value; LightGBM handles it.
@@ -47,7 +49,8 @@ Other top-level folders: `configs/`, `experiments/`, `tests/`. The raw data in `
 - Python, type hints on public functions, pandas
 - Feature, label and guideline-rule functions are pure. I/O stays at the edges (CLI modules).
 - Windows, thresholds and costs go in `configs/*.yaml`, never as literals in code.
-- Tests use small hand-built patient tables, never real patient files.
+- Tests use small hand-built patient tables, never real patient files. Only `@pytest.mark.slow`
+  tests may read the real data (e.g. patient counts), and they skip when it is missing.
 
 ## Workflow
 - Any change touching more than one file starts in plan mode. Deterministic code (features, labels, rules, replay masking) is test-first.

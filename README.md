@@ -35,12 +35,26 @@ data/training_setB/training_setB/p*.psv
 These folders are read-only. Each hospital is split once into a dev part (80%) and a test part (20%). Models are compared in three setups (A → B, B → A and a mix of both) on dev data, and the test parts are used only for the final evaluation. See `docs/adr/0004-cross-hospital-evaluation-setup.md`.
 
 ## Run
-Inspect the dataset (patients per hospital, hours per patient, % septic, % missing per column):
-```bash
-python -m sepsis.data.inspect                # both hospitals
-python -m sepsis.data.inspect --hospital A   # one hospital
-```
-Use `-m`, not the file path: running `src/sepsis/data/inspect.py` directly lets its name shadow the stdlib `inspect`. With uv, prefix with `uv run`. Reading about 40k files takes several minutes.
+With uv, prefix each command with `uv run`. Always use `-m`, not the file path (running `src/sepsis/data/inspect.py` directly lets its name shadow the stdlib `inspect`).
+
+1. Build the parquet cache, one file per hospital. Reading about 40k files takes several minutes; afterwards the cache loads in seconds.
+   ```bash
+   python -m sepsis.data.build_cache            # both hospitals; --hospital A for one
+   ```
+2. Check the split. The split file `data/splits/split.csv` is committed, and its fingerprint is saved as `split.fingerprint` in `configs/protocol.yaml`; every loader checks the file against it.
+   ```bash
+   python -m sepsis.data.make_split
+   ```
+   - File present: it only checks the file against the fingerprint and never rewrites it.
+   - File missing: it rebuilds the split from the cache and writes it only if the result matches the fingerprint. If it doesn't match (for example, different pandas or scikit-learn versions), nothing is written; get the file from the repository instead.
+   - No fingerprint yet (first run of the project only): it creates the split and prints the fingerprint to save.
+3. Inspect the dev patients (hours per patient, % septic, % missing per column):
+   ```bash
+   python -m sepsis.data.inspect                # both hospitals
+   python -m sepsis.data.inspect --hospital A   # one hospital
+   ```
+
+Paths are in `configs/data.yaml`, split settings in `configs/protocol.yaml`. Code gets patient-hours through `sepsis.data.splits.load_project_split()` and `load_patient_hours(hospitals, patient_ids)`. The second checks every requested patient against the verified split file, refuses test patients, reads only those patients from the cache and fails if any are missing from it.
 
 ## Test and lint
 Run these after every change:

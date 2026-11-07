@@ -10,21 +10,22 @@ Run the experiment defined in `$ARGUMENTS`.
 Every experiment runs all three setups on **dev data only** (ADR-0004). Each hospital was split once into dev (80%) and test (20%); A-test and B-test are never read here.
 - `A_to_B` (pessimistic): train and tune on A-dev, evaluate on B-dev.
 - `B_to_A` (pessimistic): train and tune on B-dev, evaluate on A-dev.
-- `mix` (optimistic): 5-fold patient CV on A-dev + B-dev, reported separately for A and B patients.
+- `mix` (optimistic): nested CV over the stored folds on A-dev + B-dev, reported separately for A and B patients.
+
+Patients and folds come only from the split file, through `sepsis.data.splits` (`load_project_split()`, then `cross_hospital()` or `mix_folds()`; patient-hours via `load_patient_hours(hospitals, patient_ids)`). Never create folds or splits inside an experiment.
 
 1. **Pre-flight**
    - The config exists and has `id`, `hypothesis`, `model`, `features`, `split` (with `split.setups`).
    - `git status` is clean, or the user agreed to log a dirty tree. Record `git rev-parse --short HEAD`.
    - `make check` passes (on Windows without `make`, the three `uv run` commands in `CLAUDE.md`). If not, stop and report.
    - The `id` is not already in `experiments/LOG.md`. Never reuse an id.
-   - Nothing in the config or code path loads A-test or B-test, and the dev/test patient lists come from the stored split (`configs/protocol.yaml`), not from a new split.
-2. **A → B and B → A.** For each direction:
-   - Run 5-fold patient CV inside the training hospital's dev part. Fit every fill statistic, scaler and calibration on the training folds only.
+   - Nothing in the config or code path loads A-test or B-test (no `final_eval=True`), and the split file matches `split.fingerprint` in `configs/protocol.yaml`.
+2. **A → B and B → A.** For each direction (`cross_hospital(split, train=...)`):
+   - Run CV over the stored folds of the training hospital's dev part. Fit every fill statistic, scaler and calibration on the training folds only.
    - Tune the alarm threshold on those out-of-fold predictions with the official scorer, then freeze it.
    - Fit on the whole training dev part and score the other hospital's dev part with the frozen threshold. Never tune anything on the evaluated hospital.
 3. **Mix (nested CV).** Patient ids are hospital-prefixed (`A_p000001`) so they never collide.
-   - Run an outer 5-fold patient CV on A-dev + B-dev (folds stratified by hospital × septic).
-   - In each outer fold, run an inner CV (`n_inner_folds`) on that fold's training patients only, tune the alarm threshold on the inner out-of-fold predictions, then fit on all of the fold's training patients and score the held-out fold with that threshold. A held-out fold is never used to tune its own threshold.
+   - The outer folds are the 5 stored folds from the split file (`mix_folds()`). For outer fold k, run an inner CV over the other 4 stored folds only, tune the alarm threshold on the inner out-of-fold predictions, then fit on all 4 folds and score fold k with that threshold. A held-out fold is never used to tune its own threshold.
    - Fit every statistic on the training patients of the fold only.
    - Score the held-out predictions **separately** for A patients (mix → A) and B patients (mix → B).
 4. **Score** each run with `third_party/evaluate_sepsis_score.py`, unmodified.

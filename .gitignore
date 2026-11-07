@@ -1,4 +1,8 @@
-/data/
+# Data stays local, except the committed split file (ids only, ADR-0004)
+/data/*
+!/data/splits/
+/data/splits/*
+!/data/splits/split.csv
 /runs/
 *.parquet
 *.psv
