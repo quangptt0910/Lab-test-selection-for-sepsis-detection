@@ -1,6 +1,6 @@
 # ADR-0001: Adopt the PhysioNet 2019 rank #1 recipe as the risk-model baseline
 
-Status: accepted
+Status: accepted. Superseded in part by ADR-0004: B3 is now kept only if it improves the mix setup without hurting A → B or B → A, and the evaluation protocol is defined there.
 
 ## Context
 The challenge winner (Morrill et al., "Can I get your signature?") scored 0.360 utility on the hidden test set. Their ablation on the training data shows where the gains came from:

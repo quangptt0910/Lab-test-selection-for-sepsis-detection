@@ -11,7 +11,8 @@
       "Bash(git log *)"
     ],
     "deny": [
-      "Edit(./data/raw/**)",
+      "Edit(./data/training_setA/**)",
+      "Edit(./data/training_setB/**)",
       "Edit(./third_party/**)",
       "Read(./.env)"
     ]
@@ -23,7 +24,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/ruff_after_edit.py\""
+            "command": "uv run --quiet python \"$CLAUDE_PROJECT_DIR/.claude/hooks/ruff_after_edit.py\""
           }
         ]
       }
