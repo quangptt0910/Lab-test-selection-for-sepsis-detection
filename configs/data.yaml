@@ -1,0 +1,4 @@
+# Paths only. Split and fold settings live in configs/protocol.yaml.
+raw_dir: data                     # holds training_setA/training_setA/*.psv and training_setB/training_setB/*.psv (read-only)
+cache_dir: data/cache             # parquet cache, one file per hospital (gitignored)
+split_path: data/splits/split.csv # the one dev/test split with CV folds (gitignored)

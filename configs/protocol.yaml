@@ -3,10 +3,12 @@
 
 split:
   seed: 0
-  test_fraction: 0.2            # per hospital, patient-level
-  stratify_by: [septic]
-  # The split is created once from these settings and stored as patient-id lists (gitignored).
-  # Experiments load the lists; they never re-split.
+  test_fraction: 0.2            # patient-level; stratifying by hospital x septic gives each hospital its own 80/20 split
+  n_folds: 5                    # CV folds on dev, stored in the split file so every experiment uses the same folds
+  stratify_by: [hospital, septic]
+  # Created once by `python -m sepsis.data.make_split` (path in configs/data.yaml).
+  # Set this to the fingerprint it prints; the loader then refuses any split file that differs.
+  fingerprint: bdd9ab186bc3923795361177d7579fae39230403bd7594aa2face5c7139ea6ea
 
 selection:
   # Keep a change only if mix improves and neither A->B nor B->A drops by more than this (utility).

@@ -4,8 +4,11 @@ Shared vocabulary for code, docs, tickets and prompts. If a term changes, change
 
 ## Data
 - **Patient-hour**: one row of a `.psv` file. Predictions are made for every patient-hour.
-- **Hospital A / B**: `training_setA` / `training_setB`. They come from different hospital systems and are loaded separately. The hidden hospital C is not available.
+- **Hospital A / B**: `training_setA` / `training_setB`. They come from different hospital systems. Their patient-hour tables are stored per hospital and can be loaded together or apart. The hidden hospital C is not available.
 - **Dev / test part**: each hospital's 80% / 20% patient split (A-dev, A-test, B-dev, B-test), stratified by septic. Test parts are used once, in the final evaluation (ADR-0004).
+- **Split file**: the one stored split, one row per patient: `patient_id, hospital, septic, split (dev|test), fold` (0–4 on dev). Every setup takes its patients and folds from it.
+- **Patient table**: one row per patient (`n_hours`, `septic`, `t_sepsis`), computed from the whole record. Metadata for splits, labels and EDA; never a model feature.
+- **hour**: 0-based row number within a patient's file. Labels and the scorer count rows, not `ICULOS`.
 - **ICULOS**: hours since ICU admission. On its own it is the strongest single predictor.
 - **SepsisLabel**: 1 from 6 h *before* clinical onset onward (septic patients only). It is already shifted.
 - **t_sepsis**: clinical onset hour = first SepsisLabel=1 row + 6.
@@ -41,6 +44,7 @@ Shared vocabulary for code, docs, tickets and prompts. If a term changes, change
 - **Labs per patient-day**: test burden metric reported next to utility.
 - **Setup**: how a model is trained and evaluated across hospitals (ADR-0004). **A → B**: train on A-dev, evaluate on B. **B → A**: the reverse. **Mix**: train on A-dev + B-dev with CV, report A and B patients separately (**mix → A**, **mix → B**). Mix is the optimistic number; A → B and B → A are the pessimistic ones.
 - **Training side**: the patients a setup trains and tunes on. Every fitted statistic, including the alarm threshold, comes from here.
+- **Eval side**: the dev patients a setup is evaluated on during development (B-dev for A → B). Not the same as the locked test part.
 
 ## Guideline layer
 - **Rule**: YAML record with trigger, condition, action, source and provenance.

@@ -59,14 +59,14 @@ LABELS = {
 # Added to every issue marked "Explain: evaluation" (ADR-0004).
 EVALUATION_SETUP = """\
 ## How the evaluation setup works (ADR-0004)
-1. Each hospital is split once by patient, stratified by septic: **80% dev** and **20% test**, using `configs/protocol.yaml`. The split is stored as patient-id lists and every experiment loads them, so it can never change. A-test and B-test stay locked until the final evaluation (M8-1). The hospitals are loaded separately and only combined for the mix setup.
+1. Each hospital is split once by patient, stratified by septic: **80% dev** and **20% test**, using `configs/protocol.yaml`. The split and the 5 CV folds are stored once in one split file that every experiment loads, so they can never change. A-test and B-test stay locked until the final evaluation (M8-1). Patient-hour tables are stored per hospital and can be loaded together or apart, dev patients only.
 2. During development, every experiment runs three setups on dev data only:
 
 | Setup | Train and tune on | Evaluate on |
 |---|---|---|
 | A → B | A-dev, with 5-fold CV inside it for tuning and the threshold | B-dev |
 | B → A | B-dev, with 5-fold CV inside it | A-dev |
-| Mix | A-dev + B-dev, outer 5-fold CV; each outer fold tunes its threshold with an inner CV on its own training patients (nested CV) | Each held-out fold, reported separately for A and B patients (mix → A, mix → B) |
+| Mix | A-dev + B-dev, outer CV over the 5 stored folds; outer fold k tunes its threshold with an inner CV over the other 4 folds (nested CV) | Each held-out fold, reported separately for A and B patients (mix → A, mix → B) |
 
 3. The final evaluation runs once with the frozen setup: A-dev → B-test, B-dev → A-test, and A-dev + B-dev → A-test and B-test.
 4. Every fitted statistic (fill values, scalers, the alarm threshold) comes from the training side only, never from the hospital or patients being evaluated. In mix, a held-out fold is never used to tune its own threshold.
@@ -107,21 +107,28 @@ Acceptance:
 - `leakage-reviewer` checks that nothing reads A-test or B-test outside the final evaluation.
 
 ### M0-2 | Load both hospitals and create the splits | data test-first
-Load each hospital into its own table, split each one into dev and a locked test part, and create the CV folds for the three training setups. The loader never merges the hospitals: the mix setup combines A-dev and B-dev only where it needs them.
+Build cached tables of patient-hours (one parquet file per hospital), a per-patient table, and one fixed split file (dev/test plus CV folds) that all three setups reuse. Hospitals are stored separately and can be loaded together or apart; outside the final evaluation, code only ever gets dev patients.
+The split file has one row per patient: `patient_id, hospital, septic, split (dev|test), fold (0–4 on dev, empty on test)`. Dev/test is 80/20 stratified by hospital × septic, which gives each hospital its own 80/20 split stratified by septic. Folds are 5-fold on dev, also stratified by hospital × septic, and stored so every experiment uses identical folds. A → B and B → A tune with the stored folds restricted to their training hospital. Mix holds out outer fold k and runs its inner CV on the other 4 stored folds (nested CV).
 Depends on: M0-1
 Explain: evaluation
 Tasks:
-- Write `load_hospital(name)`, which returns one table with `patient_id` (`A_p000001`), `hospital` and rows in hour order. Reuse `load_patients` from `sepsis.data.inspect`.
-- Add a CLI that saves each hospital as parquet in a gitignored folder, and a loader that reads it back.
-- Split each hospital 80/20 by patient into dev and test, stratified by septic, using `configs/protocol.yaml`. Save the patient-id lists in a gitignored folder, and refuse to overwrite them once they exist.
-- Create patient-level CV folds for each training side, from the experiment config's `cv_seed`: A-dev and B-dev (stratified by septic), and A-dev + B-dev (stratified by hospital × septic), including the inner folds that mix needs for nested CV.
-- Add a guard that raises if anything outside the final evaluation asks for A-test or B-test.
+- Loading (`src/sepsis/data/load.py`): `iter_patients(dir)` yields `(patient_id, df)`; `load_patients` and `summarize` keep working. Move `HOSPITAL_DIRS` here from `inspect.py`.
+- `read_raw_hospital(name)` returns one table with `patient_id` (`A_p000001`), `hospital`, `hour` (0-based row number) and all raw columns. Each file's row order is kept and never sorted by `ICULOS`, because the scorer matches predictions to labels by row position. `read_raw_all()` returns A and B together.
+- Cache: `python -m sepsis.data.build_cache` writes `data/cache/hospital_A.parquet` and `hospital_B.parquet`; `read_cache(["A"])` or `read_cache(["A", "B"])` reads them back, and a missing cache gives an error naming the command to run. The `read_*` functions return all patients, so only `build_cache`, `make_split` and the final evaluation use them; everything else uses `load_patient_hours()` (dev patients only).
+- Patient table: `patient_table(df)` returns `patient_id, hospital, n_hours, septic, t_sepsis`. `t_sepsis` is the first `SepsisLabel` = 1 row index + 6 (NaN if never septic, never shifted again), implemented once in `src/sepsis/labels/` for M1-2 to build on. The table is metadata for splits, labels and EDA, never joined into model features.
+- Configs: `configs/data.yaml` holds paths only (raw data, cache, split file). `configs/protocol.yaml` holds `seed`, `test_fraction`, `n_folds: 5` and `stratify_by: [hospital, septic]`. Remove `cv_seed` and `n_inner_folds` from experiment configs, since folds are stored.
+- Split: `make_split(patients, test_fraction, n_folds, seed, stratify_by)` is pure. `python -m sepsis.data.make_split` writes the split file, refuses to overwrite an existing one, and prints a SHA-256 fingerprint of the sorted `(patient_id, split, fold)` rows. After the real split is created, the fingerprint is saved as `split.fingerprint` in `configs/protocol.yaml`. The loader refuses a split file that doesn't match or has no fingerprint. Once a fingerprint is saved, `make_split` never creates a new split: it checks an existing file, or rebuilds a missing one from the cache and writes it only if it matches the fingerprint.
+- Helpers and guard: `load_split()` returns dev rows only, and test rows raise a clear error unless `final_eval=True`. `mix_folds()` returns A-dev + B-dev with folds. `cross_hospital(train="A")` returns the training side (A-dev with folds) and the eval side (B-dev), and the reverse for `train="B"`. `load_patient_hours(hospitals, split)` returns the patient-hour rows of the split's patients and refuses test patients unless `final_eval=True`. No helper ever returns a test patient, and the helpers drop `septic` so it can't reach features. `inspect` summarizes dev patients only.
+- Docs: update ADR-0004 (stored per hospital, loaded together or apart, dev parts only; split and folds stored in one file; mix inner CV uses the remaining stored folds), `CONTEXT.md` (split file, eval side), `leakage-reviewer` (patient table never joined into features; `final_eval=True` only in the final evaluation) and `README.md` (the two commands).
+- Out of scope: forward-fill, imputation, cleaning and features (M0-3, M2). Never modify `data/training_set*/` or `third_party/`.
 Acceptance:
-- Tests on tiny hand-made `.psv` files cover the ids, hour order and the hospital column.
-- A `slow` test confirms 20,336 patients for Hospital A and 20,000 for Hospital B.
-- No patient is in both dev and test, or in two validation folds, and the same seed gives the same splits.
-- Changing `cv_seed` in an experiment config changes only the CV folds, never which patients are in dev or test.
+- Tests on tiny hand-made `.psv` files (written first) cover ids, the hospital and `hour` columns, kept row order, `t_sepsis` by row index (including a patient whose `ICULOS` doesn't start at 1), and no id collision between A and B.
+- No patient is in both dev and test or in two folds; the same seed gives an identical split file and fingerprint; an existing split can't be overwritten.
+- For each hospital, the septic share in test and in each fold is within 1 percentage point of that hospital's overall share.
+- `mix_folds()` and `cross_hospital()` never return a test patient; the guard raises without `final_eval=True`; a split file that doesn't match the fingerprint is refused.
 - Reloading the parquet cache gives tables equal to the originals.
+- A `slow` test counts 20,336 patients for Hospital A, 20,000 for Hospital B and 40,336 in total.
+- The real-data cache and split are built once, the fingerprint is saved in `configs/protocol.yaml`, and the split file (ids and per-patient labels only) is committed at `data/splits/split.csv`.
 
 ### M0-3 | Check data quality and write cleaning rules | data test-first
 Find and handle problems in the raw data before anything is computed from it. Work on A-dev and B-dev only, never on the test parts.
