@@ -149,4 +149,35 @@ Variables with |standardized mean difference| >= 0.2, largest first (values: mea
 
 ## Findings
 
-Hand-written after reading the tables and figures above: finding -> what it means for the project. Kept when the analysis is re-run.
+Hand-written after reading the tables and figures above: finding -> what it means for the project. Kept when the analysis is re-run. Variable and panel choices below are proposals; they are decided in M0-6 (panels) and M2 (features), not here.
+
+1. **Same stay pattern, different prevalence and record start.** Stay length (median 39 vs 38 rows) and onset hour (median 34 in both) match, but 8.8% of A patients become septic against 5.7% of B. 36.7% of A records start after ICU hour 1 (B: 6.4%). No record is shorter than 8 rows and few are longer than 60; M0-3 never drops rows, so this comes from how the dataset was built.
+   → For a third of A patients, row number and `ICULOS` differ, so `ICULOS` (the strongest single predictor) behaves differently per hospital: compare its importance in A→B and B→A (M3). Read utility differences between hospitals with the prevalence gap in mind.
+
+2. **Many septic patients are labelled from the first row.** 11.2% of septic patients in A (about 160) and 19.7% in B (about 180) have SepsisLabel 1 in their first row, so onset is within about 6 rows of the record start (the spike at the left of the onset histogram). `septic_on_arrival_pct` counts rows, not ICU hours: for late-starting A records the first row is not ICU arrival.
+   → These patients have no history before the label window. Keep them, but report them as a separate group when results are analysed (M3).
+
+3. **Charting differs between hospitals, not only patients.**
+   - DBP: 51.5% of A hours, and 36.6% of A patients have no DBP at all (B: 86% of hours, 0.1% of patients without). SBP and MAP are nearly complete in both.
+   - Blood gas: pH, PaCO2 and FiO2 in 9–14% of A hours vs 2.2% of B (4–6 times rarer). BaseExcess and HCO3 in 0.2% of B hours.
+   - TroponinI: 2.4% of A patients vs 32.8% of B. Lactate: 37.8% vs 23.6%. Bilirubin_direct and Fibrinogen are rare in both (under 13% of patients).
+
+   → A model trained on one hospital meets a different missingness pattern in the other. Even without missingness features (ADR-0002), LightGBM's NaN branches can learn "DBP missing" as a hospital marker. Proposal (M2): use MAP and SBP, not DBP. Proposal (M0-6): TroponinI is almost absent in A, so its panel can only be judged in B; lactate is sparse in B for the guideline lactate rule.
+
+4. **Panels: a stable core and four labs that move.** A's 18-lab cluster is B's 15-lab cluster plus HCO3, Chloride and PTT. The blood-gas group (BaseExcess, pH, PaCO2, SaO2, Lactate) is the same in both. In B, HCO3, Chloride and FiO2 join the blood-gas group (and are rare there), and PTT pairs with Fibrinogen.
+   → At distance 0.6 the big cluster is too coarse to be one action. Proposal (M0-6): define clinical panels (CHEM, CBC, LFT, ABG, LACTATE, COAG, TROPONIN) and use the clustering as a check, by reporting within-panel co-measurement per hospital. FiO2 is recorded with blood gases and is one of the lab columns, so it stays hidden until revealed and belongs in the ABG panel; treating it as always visible would need a new ADR. HCO3 and Chloride belong to CHEM in A and to the blood gas in B. Panels must be one fixed mapping for both hospitals (nothing chosen on the evaluated hospital, ADR-0004), so put them in one panel for both or leave them out of the panels.
+
+5. **Lab timing sets the look-back window.** Median rows between two values: blood gas and lactate 2–3 in both hospitals (BaseExcess 1 in B, on few values). Chemistry, CBC and liver labs are 5–12 in A and mostly 11–19 in B (Creatinine 12 vs 14, Phosphate 12 vs 19, Bilirubin_total 11 vs 17). Potassium (7), Glucose (3) and Chloride (3) are drawn more often in B, and Glucose and Calcium cover more hours in B than in A.
+   → B draws most routine labs somewhat less often than A. Lab windows have to span many hours, not the 4–6 h that suit vitals. The exact reveal window and lab trend windows are set in M0-6 and M2 from the gap distribution (`p90_hours`), which section 2 does not print yet.
+
+6. **No single strong marker.** The largest septic vs non-septic difference is HR in B (SMD 0.42), then BUN in B (0.41); nothing reaches 0.5. In the 48 h before onset, HR and Temp rise slowly, WBC rises slightly in A, and MAP drops close to onset in both hospitals (A 78.5 → 76.3, B 84 → 80). Resp stays above the never-septic level for the whole window rather than rising. BUN is above the never-septic level throughout in both hospitals; Creatinine and Bilirubin_total are too in B and rise in its last few hours, while in A Creatinine matches the never-septic level and Bilirubin_total ends below it.
+   → Single-variable thresholds (B0) will be weak. Expect gains from combinations and from change over time: rolling max/min and 24 h changes (B2, B3).
+
+7. **Labs are ordered when clinicians are worried.** Over measured hours only, never-septic patients have a higher median lactate than septic patients' label-1 hours: 1.80 vs 1.70 in A, 1.94 vs 1.84 in B (pH 7.38 vs 7.39). In the trajectory plot the gap looks larger (septic 1.3–1.6), because the septic line carries earlier, older values forward.
+   → Never-septic patients who got lactate were not typical never-septic patients: whether a lab was measured says something about the clinician's concern, which supports ADR-0002 (no count or missingness features). Never fill unmeasured labs with the mean of measured values, since that gives untested patients the values of patients someone was worried about. Keep forward-fill with leading NaN (ADR-0001). In replay, a policy that orders labs routinely will often hit unavailable requests on patients nobody tested; those stay NaN and are never imputed.
+
+8. **Redundant pairs.** Hct–Hgb (r 0.96 in A, 0.97 in B), Bilirubin_direct–Bilirubin_total (0.95 in A, just under 0.9 in B), BaseExcess–HCO3 (0.98 in B). BUN–Creatinine is about 0.7.
+   → This matters for B1 logistic (unstable coefficients) and little for LightGBM. It does not change lab cost, because each pair sits in the same panel. Proposal (M2): drop Hct and Bilirubin_direct from the features. Keep Hgb, Bilirubin_total (PartialSOFA), and both BUN and Creatinine (BUN/Creatinine ratio, PartialSOFA). For BaseExcess vs HCO3, note that HCO3 is the more common one in A (97% vs 62% of patients) and the rarer one in B.
+
+9. **Hospitals differ in values.** Blood pressures are lower in A: MAP 78.7 vs 86.3 (SMD −0.48), SBP 120.9 vs 126.5, both measured in about 85–90% of hours, so this is not sparse data. SaO2 is lower in A (91.3 vs 96.6, SMD −0.59) while O2Sat is not flagged; A may record non-arterial saturations as SaO2 (not confirmed). Bilirubin, AST and BaseExcess also differ, but on few hours.
+   → Expect a gap between mix and A→B / B→A (M3). A model trained on B sees A's lower pressures as worse and may alarm more in B→A. Fixed cutoffs such as MAP < 70 in PartialSOFA fire more often in A. Fit scalers, fill values and the alarm threshold on the training side only (ADR-0004). Proposal (M2): leave SaO2 out of the features, since O2Sat, pH and PaCO2 cover it.
