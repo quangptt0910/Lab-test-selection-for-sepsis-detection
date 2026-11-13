@@ -1,0 +1,30 @@
+# Settings for the exploratory analysis (M0-4): `python -m sepsis.eda.run`.
+# Dev patients only, after the M0-3 cleaning. Outputs: docs/eda/README.md and docs/eda/figures/.
+
+# A septic patient whose SepsisLabel is already 1 in one of their first `septic_on_arrival_rows`
+# rows had onset within about 6 h of the record starting (labels are shifted 6 h early).
+septic_on_arrival_rows: 1
+
+# Onset-aligned trajectories: rows from t_sepsis - before to t_sepsis + after (rows, not ICULOS).
+trajectory:
+  before: 48
+  after: 6
+  min_patients: 20          # a point is drawn only if at least this many patients have a value
+  forward_fill: true        # carry each patient's last value forward (earlier hours only)
+  columns: [HR, Temp, Resp, MAP, O2Sat, WBC, Lactate, Creatinine, Platelets, Bilirubin_total, BUN, pH]
+
+# Pairs of variables with |Spearman r| at or above this are listed as redundant.
+redundancy_threshold: 0.9
+min_shared_hours: 500       # a correlation needs at least this many hours with both values
+
+# Septic vs non-septic table: rank a variable only with at least this many values on each side.
+min_values: 200
+
+# Candidate panels: labs are clustered on 1 - (how often they are measured in the same hour).
+# Labs closer than this distance end up in the same cluster.
+panel_distance_threshold: 0.6
+
+# Hospital shift: variables with |standardized mean difference| at or above this are flagged.
+shift_threshold: 0.2
+
+figure_dpi: 110
