@@ -75,7 +75,7 @@ Use `/codebase-design` when a module's interface feels wrong, and `/pr` to write
 
 - `/diagnosing-bugs`: a metric suddenly jumps or collapses. Suspect leakage first.
 - `/prototype`: throwaway spike, e.g. "do signatures help at all?", before productionizing.
-- `/research`: literature questions saved as a cited markdown file, e.g. the top-3 solutions review in `docs/research/`.
+- `/research`: literature questions saved as a cited markdown file, e.g. the top-4 solutions review in `docs/research/`.
 - Project skills: `rank1-features` (formulas, loaded automatically), `run-experiment`, `add-guideline-rule`.
 
 ## 4. Milestones
@@ -84,7 +84,7 @@ Each milestone is done only when its **check** passes and the evidence is pasted
 
 | # | Milestone | Check (pass/fail) |
 |---|---|---|
-| M0 | Data understanding: load both hospitals, dev/test split per hospital, data quality, EDA, top-3 review, preprocessing and panel decisions | Patient counts match the raw files (20,336 A / 20,000 B); no patient in two splits; EDA and decisions documented; `make check` green |
+| M0 | Data understanding: load both hospitals, dev/test split per hospital, data quality, EDA, top-4 review, preprocessing and panel decisions | Patient counts match the raw files (20,336 A / 20,000 B); no patient in two splits; EDA and decisions documented; `make check` green |
 | M1 | Official scorer wrapper, threshold tuning, U1−U0 target | All-zero predictions score 0.0; "best" predictions score 1.0; U1−U0 unit tests match the table in `rank1-features` |
 | M2 | Feature builder on a *view* (vitals ≤ t + revealed labs) | Leakage test: changing any row > t leaves features at t identical. Masking test: an unrevealed lab never appears. |
 | M3 | Experiment runner; B0 rules, B1 logistic, B2 LightGBM | LOG rows for B0–B2 with A→B, B→A, mix→A and mix→B; B2 > B0 in all three setups |

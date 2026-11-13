@@ -9,6 +9,10 @@ Real run (needs the GitHub CLI, logged in with the project scope):
     gh auth refresh -s project
     python scripts/create_github_issues.py
 
+Update just one issue (no labels, milestones, board or closing of other issues):
+    python scripts/create_github_issues.py --only M0-5 --dry-run
+    python scripts/create_github_issues.py --only M0-5
+
 What a run does:
 - creates or updates the labels and milestones
 - edits planned issues that already exist (matched by id, e.g. "M0-1"), so their numbers stay the same
@@ -158,19 +162,19 @@ Acceptance:
 - Only aggregates and plots are committed: no patient rows, and no notebook outputs showing raw data.
 - The whole analysis re-runs from one script or notebook.
 
-### M0-5 | Review the top-3 PhysioNet 2019 solutions | report chore
-Learn from the three best challenge entries, and decide which of their techniques fit this project.
+### M0-5 | Review four top PhysioNet 2019 solutions | report chore
+Learn from the three best challenge entries and the highest unofficial entry, and decide which of their techniques fit this project.
 Tasks:
-- Confirm the top three teams and their scores from the official challenge paper (Reyna et al., 2020).
+- Record each team's reported rank and scores as the team's own claim (the official challenge paper is not used). Where a paper and its submitted code disagree, treat the code as the reference.
 - For each team, summarise their preprocessing, features, model, training target and threshold choice.
 - Sort every technique into use, adapt or reject. For each, check whether it depends on which labs a clinician ordered (ADR-0002), since that breaks in replay.
 - Note what each team reports about performance on the hidden hospital, and how (or whether) they handled differences between hospitals.
 Acceptance:
-- `docs/research/top3-solutions.md` has a comparison table and the use/adapt/reject list, with a reason for each item and citations.
+- `docs/research/top4-solutions.md` has a comparison table and the use/adapt/reject list, with a reason for each item, and links to one note per team in `docs/research/` (each with its source paper and code).
 - Every "use" or "adapt" item names the issue that will build it.
 
 ### M0-6 | Decide the preprocessing recipe and lab panels | features decision
-Turn the data checks, EDA and top-3 review into fixed decisions for the feature builder.
+Turn the data checks, EDA and top-4 review into fixed decisions for the feature builder.
 Depends on: M0-3, M0-4, M0-5
 Tasks:
 - ADR on preprocessing: forward-fill with NaN before the first value, cleaning, what is fitted on training data only, why trees need no scaling or PCA, and what B1 logistic needs.
@@ -616,14 +620,17 @@ def normalise(text: str | None) -> str:
 
 
 def sync_issues(
-    gh: GitHub, issues: list[Issue], overwrite_progress: bool = False
+    gh: GitHub, issues: list[Issue], overwrite_progress: bool = False, only: str | None = None
 ) -> tuple[list[str], list[str]]:
     """Edit, create and close issues. Return (planned issue URLs, closed issue URLs).
 
     An issue with ticked checkboxes is not edited (that would untick them) unless
-    overwrite_progress is set.
+    overwrite_progress is set. With `only` set to an issue id, just that issue is synced
+    and no other issue is closed.
     """
     print("Issues")
+    if only is not None:
+        issues = [issue for issue in issues if issue.id == only]
     listing = json.loads(
         gh.read(
             "issue",
@@ -698,7 +705,9 @@ def sync_issues(
 
     planned_ids = {issue.id for issue in issues}
     closed_urls: list[str] = []
-    for key, item in sorted(existing.items(), key=lambda kv: kv[1]["number"]):
+    # A single-issue sync never closes anything else.
+    to_close = [] if only is not None else sorted(existing.items(), key=lambda kv: kv[1]["number"])
+    for key, item in to_close:
         if key in planned_ids or item["state"] != "OPEN":
             continue
         gh.write(
@@ -797,12 +806,20 @@ def main(argv: list[str] | None = None) -> int:
         help="also edit issues with ticked checkboxes (this unticks them)",
     )
     parser.add_argument(
+        "--only",
+        metavar="ID",
+        help="sync just this issue (e.g. M0-5); labels, milestones and the board are left alone",
+    )
+    parser.add_argument(
         "--dry-run", action="store_true", help="show what would change, change nothing"
     )
     args = parser.parse_args(argv)
 
     milestones, issues = parse_plan(ISSUES_TEXT)
     validate_plan(milestones, issues)
+    if args.only is not None and args.only not in {issue.id for issue in issues}:
+        print(f"--only {args.only}: no such issue in the plan", file=sys.stderr)
+        return 1
     print_plan(milestones, issues)
 
     if shutil.which("gh") is None:
@@ -815,10 +832,11 @@ def main(argv: list[str] | None = None) -> int:
     gh = GitHub(args.repo, args.dry_run)
     try:
         check_access(gh)
-        sync_labels(gh)
-        sync_milestones(gh, milestones)
-        planned_urls, closed_urls = sync_issues(gh, issues, args.overwrite_progress)
-        if not args.no_project:
+        if args.only is None:
+            sync_labels(gh)
+            sync_milestones(gh, milestones)
+        planned_urls, closed_urls = sync_issues(gh, issues, args.overwrite_progress, args.only)
+        if not args.no_project and args.only is None:
             sync_project(gh, args.project_owner, args.project_title, planned_urls, closed_urls)
     except RuntimeError as error:
         print(f"\nStopped: {error}", file=sys.stderr)

@@ -4,6 +4,8 @@
 /data/splits/*
 !/data/splits/split.csv
 /runs/
+# Reference papers and the teams' submitted code: contain model files and a patient file
+/papers/
 *.parquet
 *.psv
 .venv/
