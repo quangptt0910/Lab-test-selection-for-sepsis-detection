@@ -15,7 +15,9 @@ Static/time: `Age Gender Unit1 Unit2 HospAdmTime ICULOS`. Target column: `Sepsis
 ## 1. Imputation
 - Forward-fill within each patient, in time order.
 - Leave NaN before the first observed value. Do not mean-fill for LightGBM.
-- **[ours]** Labs forward-fill only from *revealed* values in the current view.
+- **[ours]** Labs forward-fill only from *revealed* values in the current view, starting at each value's reveal row (request row + 1), never at its recorded row. Panels, look-back windows and the reveal delay are in `configs/panels.yaml` (ADR-0006). No "component known" or other revealed/missing flags for labs (ADR-0002); `hours_since_<panel>` being NaN already says "never revealed".
+- **[ours]** B1 logistic only: fixed clinical normals for unrevealed labs, training-side medians for vitals, log1p + scaler fitted on the training side (`configs/preprocessing.yaml`, ADR-0005). Trees get no fill, scaling or log.
+- **[ours]** Every window counts rows and ends at t, t included: a window of w rows covers t − w + 1 … t (CONTEXT.md).
 
 ## 2. Hand-crafted features
 | Feature | Definition |
@@ -23,10 +25,9 @@ Static/time: `Age Gender Unit1 Unit2 HospAdmTime ICULOS`. Target column: `Sepsis
 | `shock_index` | HR / SBP (NaN if SBP missing or 0) |
 | `bun_cr` | BUN / Creatinine |
 | `partial_sofa` | Sum of the four component scores below. A missing component scores 0. |
-| `partial_sofa_known_<comp>` | **[ours]** 1 if that component has a revealed value, else 0 |
 | `partial_sofa_delta_24h` | partial_sofa(t) − min(partial_sofa over [t−24, t]) |
 | `<vital>_max_w`, `<vital>_min_w` | Rolling max/min over a look-back window (window from config) |
-| `hours_since_<panel>` | **[ours]** Hours since the panel was last revealed, NaN if never. This replaces rank #1's measurement counts (ADR-0002). |
+| `hours_since_<panel>` | **[ours]** Rows since the most recent revealed value of the panel was recorded (not since it was requested), NaN if none (ADR-0006). This replaces rank #1's measurement counts (ADR-0002). |
 
 ### PartialSOFA component thresholds (standard SOFA)
 | Component | Column (unit) | 0 | 1 | 2 | 3 | 4 |

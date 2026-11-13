@@ -9,6 +9,7 @@ Shared vocabulary for code, docs, tickets and prompts. If a term changes, change
 - **Split file**: the one stored split, one row per patient: `patient_id, hospital, septic, split (dev|test), fold` (0–4 on dev). Every setup takes its patients and folds from it.
 - **Patient table**: one row per patient (`n_hours`, `septic`, `t_sepsis`), computed from the whole record. Metadata for splits, labels and EDA; never a model feature.
 - **hour**: 0-based row number within a patient's file. Labels and the scorer count rows, not `ICULOS`.
+- **Window**: w rows ending at row t, t included (rows t − w + 1 … t). Every window in configs counts rows (ADR-0005).
 - **ICULOS**: hours since ICU admission. On its own it is the strongest single predictor.
 - **SepsisLabel**: 1 from 6 h *before* clinical onset onward (septic patients only). It is already shifted.
 - **t_sepsis**: clinical onset hour = first SepsisLabel=1 row + 6.
@@ -20,10 +21,12 @@ Shared vocabulary for code, docs, tickets and prompts. If a term changes, change
 
 ## Replay
 - **Replay**: re-running a patient record hour by hour. Labs stay hidden until the system requests them.
-- **Panel**: a group of labs requested together: LACTATE, ABG, CHEM, CBC, LFT, COAG, TROPONIN.
-- **Revealed**: a lab value the system requested and that exists in the record within the matching window.
-- **Unavailable request**: a panel was requested, but the record has no value nearby. It is logged, never imputed.
-- **View**: everything the system is allowed to see at hour t (all vitals ≤ t + revealed labs ≤ t).
+- **Panel**: a group of labs requested together: LACTATE, ABG, CHEM, CBC, LFT, COAG, TROPONIN. Each of the 26 labs is in exactly one panel, the same for both hospitals (`configs/panels.yaml`, ADR-0006).
+- **Look-back window**: the rows a panel request at row t may reveal values from: the panel's `lookback_rows` ending at t. Never rows after t.
+- **Reveal delay**: rows between a request and its values joining the view (1: requested at t, visible from t + 1). The row they join is the **reveal row**.
+- **Revealed**: a lab value the system requested and that exists in the record within the panel's look-back window. It stays revealed from its reveal row on, and is never written into earlier rows.
+- **Unavailable request**: a panel was requested, but the record has no value in the panel's look-back window (rows ≤ t). It is logged, never imputed.
+- **View**: everything the system is allowed to see at hour t: all vitals ≤ t, plus revealed labs whose reveal row is ≤ t (so requested at t − 1 or earlier).
 - **Policy**: rule deciding which panel (or WAIT) to request each hour. Baselines: ALL, NONE, AS_RECORDED.
 
 ## Models
@@ -37,7 +40,7 @@ Shared vocabulary for code, docs, tickets and prompts. If a term changes, change
 - **PartialSOFA**: SOFA computed only from components available here: platelets, bilirubin, MAP, creatinine.
 - **Shock index**: HR / SBP.
 - **SIRS count**: 0–4 from Temp, HR, Resp/PaCO2, WBC (bands not available).
-- **hours_since_<panel>**: hours since that panel was last revealed (NaN if never).
+- **hours_since_<panel>**: rows since the most recent revealed value of the panel was recorded (not since it was requested); NaN if none was ever revealed.
 - **Signature**: summary of a path over a window. Level 1 = net changes; level 2 = signed areas (order of events).
 
 ## Evaluation
