@@ -53,8 +53,13 @@ With uv, prefix each command with `uv run`. Always use `-m`, not the file path (
    python -m sepsis.data.inspect                # both hospitals
    python -m sepsis.data.inspect --hospital A   # one hospital
    ```
+4. Check data quality (dev patients only). This writes the findings table, with counts only, to `docs/eda/data_quality.md`:
+   ```bash
+   python -m sepsis.data.quality
+   ```
+   Limits, decisions and reasons are in `configs/cleaning.yaml`; `sepsis.data.clean.clean(df, config)` applies them.
 
-Paths are in `configs/data.yaml`, split settings in `configs/protocol.yaml`. Code gets patient-hours through `sepsis.data.splits.load_project_split()` and `load_patient_hours(hospitals, patient_ids)`. The second checks every requested patient against the verified split file, refuses test patients, reads only those patients from the cache and fails if any are missing from it.
+Paths are in `configs/data.yaml`, split settings in `configs/protocol.yaml`, cleaning rules in `configs/cleaning.yaml`. Code gets patient-hours through `sepsis.data.splits.load_project_split()` and `load_patient_hours(hospitals, patient_ids)`. The second checks every requested patient against the verified split file, refuses test patients, reads only those patients from the cache and fails if any are missing from it.
 
 ## Test and lint
 Run these after every change:

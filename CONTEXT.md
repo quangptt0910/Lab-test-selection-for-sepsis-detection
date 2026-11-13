@@ -13,8 +13,10 @@ Shared vocabulary for code, docs, tickets and prompts. If a term changes, change
 - **SepsisLabel**: 1 from 6 h *before* clinical onset onward (septic patients only). It is already shifted.
 - **t_sepsis**: clinical onset hour = first SepsisLabel=1 row + 6.
 - **dt**: t − t_sepsis for a septic patient-hour.
-- **Vitals**: HR, O2Sat, Temp, SBP, MAP, DBP, Resp, EtCO2. Recorded regardless of our policy.
+- **Vitals**: HR, O2Sat, Temp, SBP, MAP, DBP, Resp, EtCO2. Recorded regardless of our policy. EtCO2 is dropped by cleaning (empty in hospital A).
 - **Labs**: the 26 laboratory columns. In replay they are hidden until revealed.
+- **Plausible range**: fixed clinical limits per column in `configs/cleaning.yaml`. They mark impossible readings and artefacts, not abnormal values (a hypertensive crisis is kept). Never fitted on data.
+- **Cleaning rule**: a pure function from `sepsis.data.clean` that applies the cleaning config: drop unused columns, convert units, blank (or clip) values outside the plausible range, and blank all pressures of an hour where DBP >= SBP. It judges each value only within its own hour, and never drops or reorders rows or changes ids, `ICULOS` or `SepsisLabel`.
 
 ## Replay
 - **Replay**: re-running a patient record hour by hour. Labs stay hidden until the system requests them.
