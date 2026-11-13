@@ -109,14 +109,17 @@ def analyse(df: pd.DataFrame, config: dict, fig_dir: Path) -> str:
         dpi,
     )
     wide = miss.merge(gaps, on=["hospital", "column"]).pivot(
-        index="column", columns="hospital", values=["pct_hours", "pct_patients", "median_hours"]
+        index="column",
+        columns="hospital",
+        values=["pct_hours", "pct_patients", "median_hours", "p90_hours"],
     )
     wide.columns = [f"{v}_{h}" for v, h in wide.columns]
     wide = wide.reindex(measured).reset_index()
     sections += [
         "## 2. Missingness and time between measurements",
         "`pct_hours`: % of hours with a value. `pct_patients`: % of patients with at least one "
-        "value. `median_hours`: median rows between two values of the same patient. "
+        "value. `median_hours` / `p90_hours`: median / 90th percentile of rows between two values "
+        "of the same patient (the p90 sets the look-back windows in `configs/panels.yaml`). "
         "Describes how often labs were ordered; never a feature (ADR-0002).",
         markdown_table(wide),
         "![missingness](figures/missingness.png)",

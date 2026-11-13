@@ -16,43 +16,43 @@ Hours are rows. `onset_hour_median` is t_sepsis (first label row + 6) of septic 
 
 ## 2. Missingness and time between measurements
 
-`pct_hours`: % of hours with a value. `pct_patients`: % of patients with at least one value. `median_hours`: median rows between two values of the same patient. Describes how often labs were ordered; never a feature (ADR-0002).
+`pct_hours`: % of hours with a value. `pct_patients`: % of patients with at least one value. `median_hours` / `p90_hours`: median / 90th percentile of rows between two values of the same patient (the p90 sets the look-back windows in `configs/panels.yaml`). Describes how often labs were ordered; never a feature (ADR-0002).
 
-| column | pct_hours_A | pct_hours_B | pct_patients_A | pct_patients_B | median_hours_A | median_hours_B |
-|---|---|---|---|---|---|---|
-| HR | 92.3 | 87.9 | 100.0 | 100.0 | 1.0 | 1.0 |
-| O2Sat | 87.9 | 85.8 | 99.9 | 100.0 | 1.0 | 1.0 |
-| Temp | 33.7 | 33.8 | 98.9 | 99.8 | 2.0 | 2.0 |
-| SBP | 84.8 | 86.0 | 98.7 | 99.9 | 1.0 | 1.0 |
-| MAP | 89.7 | 85.2 | 100.0 | 99.5 | 1.0 | 1.0 |
-| DBP | 51.5 | 86.0 | 63.4 | 99.9 | 1.0 | 1.0 |
-| Resp | 90.2 | 78.9 | 99.9 | 99.8 | 1.0 | 1.0 |
-| BaseExcess | 10.4 | 0.2 | 62.1 | 2.8 | 2.0 | 1.0 |
-| HCO3 | 8.0 | 0.2 | 97.4 | 2.1 | 8.0 | 1.0 |
-| FiO2 | 14.1 | 2.2 | 58.6 | 28.6 | 3.0 | 4.0 |
-| pH | 11.5 | 2.2 | 64.7 | 28.3 | 2.0 | 3.0 |
-| PaCO2 | 8.8 | 2.2 | 61.8 | 28.4 | 3.0 | 3.0 |
-| SaO2 | 5.0 | 1.9 | 39.2 | 25.2 | 2.0 | 3.0 |
-| AST | 1.5 | 1.7 | 28.9 | 42.4 | 6.0 | 18.0 |
-| BUN | 8.1 | 5.5 | 98.0 | 92.3 | 8.0 | 14.0 |
-| Alkalinephos | 1.4 | 1.8 | 28.0 | 42.4 | 6.0 | 17.0 |
-| Calcium | 5.0 | 5.4 | 81.5 | 92.0 | 12.0 | 15.0 |
-| Chloride | 8.3 | 0.6 | 97.4 | 7.9 | 8.0 | 3.0 |
-| Creatinine | 6.6 | 5.5 | 97.8 | 92.3 | 12.0 | 14.0 |
-| Bilirubin_direct | 0.1 | 0.2 | 2.9 | 7.2 | 5.0 | 15.0 |
-| Glucose | 12.1 | 22.0 | 98.0 | 94.3 | 4.0 | 3.0 |
-| Lactate | 3.4 | 1.9 | 37.8 | 23.6 | 2.0 | 3.0 |
-| Magnesium | 7.8 | 4.8 | 93.2 | 82.3 | 8.0 | 13.0 |
-| Phosphate | 5.0 | 2.9 | 82.2 | 58.3 | 12.0 | 19.0 |
-| Potassium | 10.8 | 7.7 | 97.9 | 93.0 | 5.0 | 7.0 |
-| Bilirubin_total | 1.2 | 1.8 | 28.3 | 42.5 | 11.0 | 17.0 |
-| TroponinI | 0.1 | 1.8 | 2.4 | 32.8 | 8.0 | 7.0 |
-| Hct | 11.7 | 5.8 | 98.3 | 90.4 | 5.0 | 11.0 |
-| Hgb | 8.8 | 5.9 | 97.5 | 90.5 | 6.0 | 11.0 |
-| PTT | 4.8 | 1.0 | 77.6 | 21.9 | 8.0 | 7.0 |
-| WBC | 7.5 | 5.3 | 97.0 | 90.2 | 8.0 | 15.0 |
-| Fibrinogen | 0.8 | 0.5 | 12.6 | 9.7 | 4.0 | 7.0 |
-| Platelets | 6.5 | 5.3 | 97.2 | 90.2 | 12.0 | 14.0 |
+| column | pct_hours_A | pct_hours_B | pct_patients_A | pct_patients_B | median_hours_A | median_hours_B | p90_hours_A | p90_hours_B |
+|---|---|---|---|---|---|---|---|---|
+| HR | 92.3 | 87.9 | 100.0 | 100.0 | 1.0 | 1.0 | 1.0 | 1.0 |
+| O2Sat | 87.9 | 85.8 | 99.9 | 100.0 | 1.0 | 1.0 | 1.0 | 1.0 |
+| Temp | 33.7 | 33.8 | 98.9 | 99.8 | 2.0 | 2.0 | 5.0 | 4.0 |
+| SBP | 84.8 | 86.0 | 98.7 | 99.9 | 1.0 | 1.0 | 1.0 | 1.0 |
+| MAP | 89.7 | 85.2 | 100.0 | 99.5 | 1.0 | 1.0 | 1.0 | 1.0 |
+| DBP | 51.5 | 86.0 | 63.4 | 99.9 | 1.0 | 1.0 | 1.0 | 1.0 |
+| Resp | 90.2 | 78.9 | 99.9 | 99.8 | 1.0 | 1.0 | 1.0 | 2.0 |
+| BaseExcess | 10.4 | 0.2 | 62.1 | 2.8 | 2.0 | 1.0 | 9.0 | 2.0 |
+| HCO3 | 8.0 | 0.2 | 97.4 | 2.1 | 8.0 | 1.0 | 24.0 | 3.0 |
+| FiO2 | 14.1 | 2.2 | 58.6 | 28.6 | 3.0 | 4.0 | 5.0 | 15.0 |
+| pH | 11.5 | 2.2 | 64.7 | 28.3 | 2.0 | 3.0 | 9.0 | 14.0 |
+| PaCO2 | 8.8 | 2.2 | 61.8 | 28.4 | 3.0 | 3.0 | 10.0 | 14.0 |
+| SaO2 | 5.0 | 1.9 | 39.2 | 25.2 | 2.0 | 3.0 | 9.0 | 15.0 |
+| AST | 1.5 | 1.7 | 28.9 | 42.4 | 6.0 | 18.0 | 24.0 | 27.0 |
+| BUN | 8.1 | 5.5 | 98.0 | 92.3 | 8.0 | 14.0 | 24.0 | 25.0 |
+| Alkalinephos | 1.4 | 1.8 | 28.0 | 42.4 | 6.0 | 17.0 | 24.0 | 27.0 |
+| Calcium | 5.0 | 5.4 | 81.5 | 92.0 | 12.0 | 15.0 | 25.0 | 25.0 |
+| Chloride | 8.3 | 0.6 | 97.4 | 7.9 | 8.0 | 3.0 | 24.0 | 12.0 |
+| Creatinine | 6.6 | 5.5 | 97.8 | 92.3 | 12.0 | 14.0 | 24.0 | 25.0 |
+| Bilirubin_direct | 0.1 | 0.2 | 2.9 | 7.2 | 5.0 | 15.0 | 21.6 | 34.0 |
+| Glucose | 12.1 | 22.0 | 98.0 | 94.3 | 4.0 | 3.0 | 17.0 | 6.0 |
+| Lactate | 3.4 | 1.9 | 37.8 | 23.6 | 2.0 | 3.0 | 12.0 | 12.0 |
+| Magnesium | 7.8 | 4.8 | 93.2 | 82.3 | 8.0 | 13.0 | 23.0 | 25.0 |
+| Phosphate | 5.0 | 2.9 | 82.2 | 58.3 | 12.0 | 19.0 | 25.0 | 26.0 |
+| Potassium | 10.8 | 7.7 | 97.9 | 93.0 | 5.0 | 7.0 | 19.0 | 24.0 |
+| Bilirubin_total | 1.2 | 1.8 | 28.3 | 42.5 | 11.0 | 17.0 | 25.0 | 27.0 |
+| TroponinI | 0.1 | 1.8 | 2.4 | 32.8 | 8.0 | 7.0 | 18.0 | 16.0 |
+| Hct | 11.7 | 5.8 | 98.3 | 90.4 | 5.0 | 11.0 | 18.0 | 25.0 |
+| Hgb | 8.8 | 5.9 | 97.5 | 90.5 | 6.0 | 11.0 | 24.0 | 25.0 |
+| PTT | 4.8 | 1.0 | 77.6 | 21.9 | 8.0 | 7.0 | 24.0 | 24.0 |
+| WBC | 7.5 | 5.3 | 97.0 | 90.2 | 8.0 | 15.0 | 24.0 | 25.0 |
+| Fibrinogen | 0.8 | 0.5 | 12.6 | 9.7 | 4.0 | 7.0 | 13.0 | 17.0 |
+| Platelets | 6.5 | 5.3 | 97.2 | 90.2 | 12.0 | 14.0 | 25.0 | 25.0 |
 
 ![missingness](figures/missingness.png)
 
@@ -168,7 +168,7 @@ Hand-written after reading the tables and figures above: finding -> what it mean
    → At distance 0.6 the big cluster is too coarse to be one action. Proposal (M0-6): define clinical panels (CHEM, CBC, LFT, ABG, LACTATE, COAG, TROPONIN) and use the clustering as a check, by reporting within-panel co-measurement per hospital. FiO2 is recorded with blood gases and is one of the lab columns, so it stays hidden until revealed and belongs in the ABG panel; treating it as always visible would need a new ADR. HCO3 and Chloride belong to CHEM in A and to the blood gas in B. Panels must be one fixed mapping for both hospitals (nothing chosen on the evaluated hospital, ADR-0004), so put them in one panel for both or leave them out of the panels.
 
 5. **Lab timing sets the look-back window.** Median rows between two values: blood gas and lactate 2–3 in both hospitals (BaseExcess 1 in B, on few values). Chemistry, CBC and liver labs are 5–12 in A and mostly 11–19 in B (Creatinine 12 vs 14, Phosphate 12 vs 19, Bilirubin_total 11 vs 17). Potassium (7), Glucose (3) and Chloride (3) are drawn more often in B, and Glucose and Calcium cover more hours in B than in A.
-   → B draws most routine labs somewhat less often than A. Lab windows have to span many hours, not the 4–6 h that suit vitals. The exact reveal window and lab trend windows are set in M0-6 and M2 from the gap distribution (`p90_hours`), which section 2 does not print yet.
+   → B draws most routine labs somewhat less often than A. Lab windows have to span many hours, not the 4–6 h that suit vitals. The 90th percentile of the gap (`p90_hours`, section 2) is 9–15 rows for blood gas, 12 for lactate and 21–27 for chemistry, CBC, liver and coagulation labs; M0-6 sets the reveal look-back windows from it (`configs/panels.yaml`, ADR-0006), and M2 sets the lab trend windows.
 
 6. **No single strong marker.** The largest septic vs non-septic difference is HR in B (SMD 0.42), then BUN in B (0.41); nothing reaches 0.5. In the 48 h before onset, HR and Temp rise slowly, WBC rises slightly in A, and MAP drops close to onset in both hospitals (A 78.5 → 76.3, B 84 → 80). Resp stays above the never-septic level for the whole window rather than rising. BUN is above the never-septic level throughout in both hospitals; Creatinine and Bilirubin_total are too in B and rise in its last few hours, while in A Creatinine matches the never-septic level and Bilirubin_total ends below it.
    → Single-variable thresholds (B0) will be weak. Expect gains from combinations and from change over time: rolling max/min and 24 h changes (B2, B3).
