@@ -24,6 +24,8 @@ Empty `rows` means the check counts patients, not rows. `decision` and `reason` 
 | out of range (high) | Platelets | 0 | 0 | 1 | 1 | nan |  |
 | looks like % | FiO2 | 1 | 1 | 22 | 17 | keep | values above 1 are errors (2.0, 4000), not percentages; the range rule sets them to NaN |
 | DBP >= SBP | SBP, MAP, DBP | 67 | 62 | 146 | 108 | nan | physically impossible; includes flush artefacts where SBP, MAP and DBP are all about 290 |
+| missing value | ICULOS | 0 | 0 | 0 | 0 |  |  |
+| missing value | SepsisLabel | 0 | 0 | 0 | 0 |  |  |
 | ICULOS doesn't start at 1 | ICULOS |  | 5965 |  | 1029 |  |  |
 | ICULOS repeats | ICULOS |  | 0 |  | 0 |  |  |
 | ICULOS skips hours | ICULOS |  | 0 |  | 0 |  |  |

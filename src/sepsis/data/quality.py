@@ -63,10 +63,25 @@ def unit_suspects(df: pd.DataFrame, suspects: Mapping[str, Mapping[str, Any]]) -
     return pd.DataFrame(out, columns=["column", "meaning", "rows", "patients"])
 
 
+def missing_values(df: pd.DataFrame, columns: Sequence[str]) -> pd.DataFrame:
+    """Rows and patients with a missing value, for every listed column present (zeros included).
+
+    Used for ICULOS and SepsisLabel: the step checks below skip NaN, so this shows whether
+    those checks saw every hour.
+    """
+    out = []
+    for column in columns:
+        if column in df.columns:
+            mask = df[column].isna()
+            out.append((column, int(mask.sum()), df.loc[mask, "patient_id"].nunique()))
+    return pd.DataFrame(out, columns=["column", "rows", "patients"])
+
+
 def iculos_problems(df: pd.DataFrame) -> dict[str, int]:
     """Patients whose ICULOS doesn't start at 1, repeats, jumps by more than 1 or decreases.
 
-    Steps are taken in row (`hour`) order, never in ICULOS order.
+    Steps are taken in row (`hour`) order, never in ICULOS order. Missing ICULOS values are
+    skipped here and counted by `missing_values`.
     """
     ordered = _in_hour_order(df)
     by_patient = ordered.groupby("patient_id", sort=False)["ICULOS"]
@@ -120,6 +135,8 @@ def _hospital_findings(df: pd.DataFrame, config: Mapping[str, Any]) -> list[tupl
     if {"SBP", "DBP"} <= set(df.columns):
         rows, patients = bp_inconsistent(df)
         out.append(("DBP >= SBP", _bp_label(config), rows, patients))
+    for r in missing_values(df, ["ICULOS", "SepsisLabel"]).itertuples():
+        out.append(("missing value", r.column, r.rows, r.patients))
     if "ICULOS" in df.columns:
         names = {
             "not_starting_at_1": "ICULOS doesn't start at 1",
@@ -142,11 +159,12 @@ def _hospital_findings(df: pd.DataFrame, config: Mapping[str, Any]) -> list[tupl
     return out
 
 
-ROW_LEVEL_CHECKS = ("out of range", "looks like", "DBP >= SBP")
+ROW_LEVEL_CHECKS = ("out of range", "looks like", "DBP >= SBP", "missing value")
 CHECK_ORDER = (
     "out of range",
     "looks like",
     "DBP >= SBP",
+    "missing value",
     "ICULOS",
     "label",
     "fewer",

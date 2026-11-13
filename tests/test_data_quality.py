@@ -9,6 +9,7 @@ from sepsis.data.quality import (
     format_report,
     iculos_problems,
     label_reversals,
+    missing_values,
     quality_findings,
     range_violations,
     short_stays,
@@ -165,3 +166,33 @@ def test_format_report_prints_notes(table: pd.DataFrame) -> None:
     config = {"ranges": RANGES, "unit_suspects": SUSPECTS, "min_hours": 4}
     text = format_report(quality_findings(table, config), table, notes=["ICULOS is kept."])
     assert "## Notes" in text and "- ICULOS is kept." in text
+
+
+def test_missing_protected_values_leading_and_interior() -> None:
+    df = pd.DataFrame(
+        {
+            "patient_id": ["A_p1"] * 3 + ["A_p2"] * 3 + ["A_p3"] * 2,
+            "hour": [0, 1, 2, 0, 1, 2, 0, 1],
+            "ICULOS": [np.nan, 2, 3, 1, np.nan, 3, 1, 2],  # leading null, interior null
+            "SepsisLabel": [0, 0, 0, 1, np.nan, 0, 0, 0],  # interior null hides 1 -> 0
+        }
+    )
+    out = missing_values(df, ["ICULOS", "SepsisLabel"]).set_index("column")
+    assert out.loc["ICULOS", ["rows", "patients"]].tolist() == [2, 2]
+    assert out.loc["SepsisLabel", ["rows", "patients"]].tolist() == [1, 1]
+
+
+def test_findings_always_report_missing_ids_and_labels(table: pd.DataFrame) -> None:
+    config = {"ranges": RANGES, "unit_suspects": SUSPECTS, "min_hours": 4}
+    clean_out = quality_findings(table, config).set_index(["check", "column"])
+    assert clean_out.loc[("missing value", "ICULOS"), ["A_rows", "A_patients"]].tolist() == [0, 0]
+    assert clean_out.loc[("missing value", "SepsisLabel"), ["A_rows", "A_patients"]].tolist() == [
+        0,
+        0,
+    ]
+    gappy = table.copy()
+    gappy.loc[4, "ICULOS"] = np.nan  # A_p2's repeated ICULOS is now hidden behind a NaN
+    gappy.loc[4, "SepsisLabel"] = np.nan
+    out = quality_findings(gappy, config).set_index(["check", "column"])
+    assert out.loc[("missing value", "ICULOS"), ["A_rows", "A_patients"]].tolist() == [1, 1]
+    assert out.loc[("missing value", "SepsisLabel"), ["A_rows", "A_patients"]].tolist() == [1, 1]
