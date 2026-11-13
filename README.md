@@ -58,6 +58,11 @@ With uv, prefix each command with `uv run`. Always use `-m`, not the file path (
    python -m sepsis.data.quality
    ```
    Limits, decisions and reasons are in `configs/cleaning.yaml`; `sepsis.data.clean.clean(df, config)` applies them.
+5. Explore both hospitals (dev patients only, after cleaning). This writes figures to `docs/eda/figures/` and tables to the generated part of `docs/eda/README.md`; the hand-written findings below it are kept:
+   ```bash
+   python -m sepsis.eda.run
+   ```
+   Settings are in `configs/eda.yaml`. It takes about 20 seconds.
 
 Paths are in `configs/data.yaml`, split settings in `configs/protocol.yaml`, cleaning rules in `configs/cleaning.yaml`. Code gets patient-hours through `sepsis.data.splits.load_project_split()` and `load_patient_hours(hospitals, patient_ids)`. The second checks every requested patient against the verified split file, refuses test patients, reads only those patients from the cache and fails if any are missing from it.
 
