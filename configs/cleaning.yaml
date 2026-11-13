@@ -1,0 +1,88 @@
+# Data-quality checks and cleaning rules (M0-3). Read by sepsis.data.quality and sepsis.data.clean.
+#
+# Limits are fixed clinical constants, never fitted on data, so nothing is learnt from the hospital
+# being evaluated. A rule judges each value on its own (never other hours), and cleaning never
+# drops or reorders rows: the official scorer matches predictions to labels by row position.
+# SepsisLabel, ICULOS and the id columns are never cleaned.
+#
+# The limits, the Calcium limit and dropping EtCO2 were chosen from the data-quality check on
+# A-dev and B-dev (docs/eda/data_quality.md), not on one hospital's training side. They are fixed
+# constants and the same config is used in every setup (A->B, B->A, mix), but A->B and B->A
+# results should be read knowing the hospital being evaluated informed these choices.
+#
+# Units follow the PhysioNet/CinC 2019 data description.
+# action: nan  -> set values outside [low, high] to NaN (forward-fill later carries the last good value)
+#         clip -> move them to the nearest limit
+#         keep -> report only
+# provenance: project_assumption until a clinical source is cited (then: external_spec).
+
+min_hours: 8   # patients with fewer rows are reported as short stays
+
+ranges:
+  # Vitals
+  HR:               {low: 20,   high: 300,   unit: bpm,         action: nan, provenance: project_assumption}
+  O2Sat:            {low: 20,   high: 100,   unit: "%",         action: nan, provenance: project_assumption}
+  Temp:             {low: 25,   high: 45,    unit: degC,        action: nan, provenance: project_assumption,
+                     reason: "21, 23.6 and 50 degC are not survivable readings"}
+  SBP:              {low: 20,   high: 300,   unit: mmHg,        action: nan, provenance: project_assumption}
+  MAP:              {low: 20,   high: 300,   unit: mmHg,        action: nan, provenance: project_assumption}
+  DBP:              {low: 5,    high: 200,   unit: mmHg,        action: nan, provenance: project_assumption,
+                     reason: "120-200 is a hypertensive crisis and kept; above 200 is treated as artefact"}
+  Resp:             {low: 1,    high: 100,   unit: breaths/min, action: nan, provenance: project_assumption}
+  EtCO2:            {low: 0,    high: 100,   unit: mmHg,        action: nan, provenance: project_assumption}
+  # Labs
+  BaseExcess:       {low: -40,  high: 40,    unit: mmol/L,      action: nan, provenance: project_assumption}
+  HCO3:             {low: 0,    high: 60,    unit: mmol/L,      action: nan, provenance: project_assumption}
+  FiO2:             {low: 0.21, high: 1.0,   unit: fraction,    action: nan, provenance: project_assumption,
+                     reason: "0.21 is room air; 0.02-0.06 look like O2 flow (L/min) in the wrong field; 2.0, 4000 are errors"}
+  pH:               {low: 6.5,  high: 8.0,   unit: pH,          action: nan, provenance: project_assumption}
+  PaCO2:            {low: 5,    high: 200,   unit: mmHg,        action: nan, provenance: project_assumption}
+  SaO2:             {low: 20,   high: 100,   unit: "%",         action: nan, provenance: project_assumption}
+  AST:              {low: 0,    high: 20000, unit: IU/L,        action: nan, provenance: project_assumption}
+  BUN:              {low: 0,    high: 300,   unit: mg/dL,       action: nan, provenance: project_assumption}
+  Alkalinephos:     {low: 0,    high: 5000,  unit: IU/L,        action: nan, provenance: project_assumption}
+  Calcium:          {low: 5,    high: 20,    unit: mg/dL,       action: nan, provenance: project_assumption,
+                     reason: "B mixes in ionized calcium (about 1.1 mmol/L and 4.5-5.3 mg/dL); A has almost none, so it is dropped"}
+  Chloride:         {low: 50,   high: 160,   unit: mmol/L,      action: nan, provenance: project_assumption}
+  Creatinine:       {low: 0,    high: 30,    unit: mg/dL,       action: nan, provenance: project_assumption}
+  Bilirubin_direct: {low: 0,    high: 50,    unit: mg/dL,       action: nan, provenance: project_assumption}
+  Glucose:          {low: 10,   high: 2000,  unit: mg/dL,       action: nan, provenance: project_assumption}
+  Lactate:          {low: 0,    high: 40,    unit: mmol/L,      action: nan, provenance: project_assumption}
+  Magnesium:        {low: 0.2,  high: 10,    unit: mg/dL,       action: nan, provenance: project_assumption}
+  Phosphate:        {low: 0,    high: 25,    unit: mg/dL,       action: nan, provenance: project_assumption}
+  Potassium:        {low: 1,    high: 12,    unit: mmol/L,      action: nan, provenance: project_assumption}
+  Bilirubin_total:  {low: 0,    high: 80,    unit: mg/dL,       action: nan, provenance: project_assumption}
+  TroponinI:        {low: 0,    high: 500,   unit: ng/mL,       action: nan, provenance: project_assumption}
+  Hct:              {low: 5,    high: 75,    unit: "%",         action: nan, provenance: project_assumption}
+  Hgb:              {low: 1,    high: 25,    unit: g/dL,        action: nan, provenance: project_assumption}
+  PTT:              {low: 10,   high: 250,   unit: s,           action: nan, provenance: project_assumption}
+  WBC:              {low: 0,    high: 500,   unit: 10^3/uL,     action: nan, provenance: project_assumption}
+  Fibrinogen:       {low: 20,   high: 2000,  unit: mg/dL,       action: nan, provenance: project_assumption}
+  Platelets:        {low: 0,    high: 2000,  unit: 10^3/uL,     action: nan, provenance: project_assumption}
+  # Demographics (PhysioNet stores ages 90+ as 100)
+  Age:              {low: 14,   high: 100,   unit: years,       action: keep, provenance: project_assumption}
+
+# Values in these windows look like a different unit. They are reported; `action: convert`
+# applies the conversion before the range check, `action: keep` leaves them to the range rule.
+unit_suspects:
+  Temp: {low: 80,   high: 115, meaning: degF, conversion: fahrenheit_to_celsius, action: keep}
+  FiO2: {low: 1.01, high: 100, meaning: "%",  conversion: percent_to_fraction,   action: keep,
+         reason: "values above 1 are errors (2.0, 4000), not percentages; the range rule sets them to NaN"}
+
+# Same-hour consistency: diastolic pressure can't reach systolic. When DBP >= SBP in an hour, we
+# can't tell which reading is wrong, so all three pressures of that hour become NaN.
+bp_consistency:
+  columns: [SBP, MAP, DBP]
+  action: nan
+  provenance: project_assumption
+  reason: "physically impossible; includes flush artefacts where SBP, MAP and DBP are all about 290"
+
+# Columns removed before modelling.
+drop_columns:
+  EtCO2: "empty in hospital A, so no setup can use it across hospitals; its presence would reveal the hospital"
+
+# Findings that need no cleaning; printed under the table in docs/eda/data_quality.md.
+notes:
+  - "ICULOS doesn't start at 1 for many patients (A much more than B): records begin later in the ICU stay. Kept as is; labels and the scorer count rows, not ICULOS."
+  - "Ionized calcium values just above 5 mg/dL can't be told apart from low total calcium and stay in the data."
+  - "No repeated, skipped or decreasing ICULOS, no SepsisLabel going from 1 to 0, and no stay shorter than 8 hours in either hospital."

@@ -1,0 +1,49 @@
+# Lab panels and reveal rules (M0-6, ADR-0006). Read by sepsis.data.panels.
+#
+# Every one of the 26 lab columns belongs to exactly one panel (checked by tests/test_panels.py).
+# One fixed mapping for both hospitals: nothing is chosen on the hospital being evaluated (ADR-0004).
+# The mapping follows clinical panels; the co-measurement clustering of M0-4 is a check, not the
+# source (docs/eda/README.md, section 3 and finding 4).
+#
+# Reveal rule: a request for panel P at row t reveals every recorded value of P's labs in rows
+# (t - lookback_rows, t], i.e. lookback_rows rows ending at t, t included. The values join the view
+# from row t + reveal_delay_rows (their reveal row) and are never written into earlier rows.
+# Values after t are never revealed by that request (no look-forward).
+# No value in the window -> unavailable request: logged, never imputed.
+# The "as recorded" training mask uses the same delay: a value recorded at row r is visible from r + 1.
+# Rows are rows of the patient file, not ICULOS.
+#
+# lookback_rows comes from the p90 of rows between two values of the same lab (docs/eda/README.md,
+# section 2), A / B: core routine labs (BUN, Creatinine, WBC, Platelets, Hgb, PTT, ...) 23-27 in
+# each hospital -> 24. Lactate 12 / 12 -> 12. pH, PaCO2, SaO2 9-10 / 14-15 -> 12, deliberately
+# short so a stale blood gas is not returned as new. Exceptions are listed in ADR-0006.
+# provenance: project_assumption (no clinical source cited yet). Costs are set in M6, not here.
+
+reveal_delay_rows: 1   # requested at row t (after the risk at t), visible from row t + 1; must be >= 1
+
+panels:
+  LACTATE:
+    labs: [Lactate]
+    lookback_rows: 12
+  ABG:
+    # FiO2 is a lab column, recorded with blood gases, so it stays hidden until revealed (finding 4).
+    labs: [pH, PaCO2, BaseExcess, SaO2, FiO2]
+    lookback_rows: 12
+  CHEM:
+    # HCO3 and Chloride: 100% of their hours also have BUN, Creatinine or Potassium in both hospitals.
+    # Glucose: drawn often on its own in B, kept here so the panel list matches CONTEXT.md.
+    labs: [BUN, Creatinine, Glucose, Potassium, Chloride, HCO3, Calcium, Magnesium, Phosphate]
+    lookback_rows: 24
+  CBC:
+    labs: [WBC, Hgb, Hct, Platelets]
+    lookback_rows: 24
+  LFT:
+    labs: [AST, Alkalinephos, Bilirubin_total, Bilirubin_direct]
+    lookback_rows: 24
+  COAG:
+    labs: [PTT, Fibrinogen]
+    lookback_rows: 24
+  TROPONIN:
+    # Almost absent in A (2.4% of patients vs 32.8% in B), so this panel can only be judged in B.
+    labs: [TroponinI]
+    lookback_rows: 24

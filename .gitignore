@@ -1,5 +1,11 @@
-/data/
+# Data stays local, except the committed split file (ids only, ADR-0004)
+/data/*
+!/data/splits/
+/data/splits/*
+!/data/splits/split.csv
 /runs/
+# Reference papers and the teams' submitted code: contain model files and a patient file
+/papers/
 *.parquet
 *.psv
 .venv/
@@ -16,4 +22,3 @@ uv.lock
 !.claude/skills/rank1-features/
 !.claude/skills/run-experiment/
 !.claude/skills/add-guideline-rule/
-!.claude/skills/milestones-to-issues/

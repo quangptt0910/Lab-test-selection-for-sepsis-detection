@@ -1,0 +1,46 @@
+# Preprocessing recipe (M0-6, ADR-0005). The B1 part is read by the B1 logistic model (M3-2).
+#
+# All models: M0-3 cleaning (configs/cleaning.yaml) -> reveal mask -> forward-fill within each
+# patient over revealed values only, NaN before the first value (ADR-0001). No interpolation.
+# Trees (B2, B3) use the result as is: NaN kept, no scaling, no log, no PCA.
+
+forward_fill: true
+
+b1:
+  # Labs never revealed are filled with a fixed normal adult value, not a value fitted on data.
+  # A mean of measured values would give untested patients the values of patients a clinician was
+  # worried about (docs/eda/README.md, finding 7). Units as in configs/cleaning.yaml.
+  # provenance: project_assumption (approximate middle of common adult reference ranges).
+  lab_fill:
+    BaseExcess:       {value: 0.0,  unit: mmol/L}
+    HCO3:             {value: 24.0, unit: mmol/L}
+    FiO2:             {value: 0.21, unit: fraction}   # room air
+    pH:               {value: 7.40, unit: pH}
+    PaCO2:            {value: 40.0, unit: mmHg}
+    SaO2:             {value: 97.0, unit: "%"}
+    AST:              {value: 25.0, unit: IU/L}
+    BUN:              {value: 14.0, unit: mg/dL}
+    Alkalinephos:     {value: 80.0, unit: IU/L}
+    Calcium:          {value: 9.4,  unit: mg/dL}
+    Chloride:         {value: 102.0, unit: mmol/L}
+    Creatinine:       {value: 0.9,  unit: mg/dL}
+    Bilirubin_direct: {value: 0.2,  unit: mg/dL}
+    Glucose:          {value: 100.0, unit: mg/dL}
+    Lactate:          {value: 1.0,  unit: mmol/L}
+    Magnesium:        {value: 2.0,  unit: mg/dL}
+    Phosphate:        {value: 3.5,  unit: mg/dL}
+    Potassium:        {value: 4.2,  unit: mmol/L}
+    Bilirubin_total:  {value: 0.7,  unit: mg/dL}
+    TroponinI:        {value: 0.01, unit: ng/mL}
+    Hct:              {value: 42.0, unit: "%"}
+    Hgb:              {value: 14.0, unit: g/dL}
+    PTT:              {value: 30.0, unit: s}
+    WBC:              {value: 7.5,  unit: 10^3/uL}
+    Fibrinogen:       {value: 300.0, unit: mg/dL}
+    Platelets:        {value: 250.0, unit: 10^3/uL}
+  # Vitals missing before their first value: median of the training side (fitted per setup).
+  vital_fill: training_median
+  # Right-skewed labs get log1p before scaling.
+  log_labs: [AST, Alkalinephos, BUN, Creatinine, Bilirubin_total, Bilirubin_direct, Lactate, TroponinI, Glucose, WBC]
+  # Standard scaler, fitted on the training side only (ADR-0004).
+  scaler: standard

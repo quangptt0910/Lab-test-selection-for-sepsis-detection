@@ -1,4 +1,4 @@
-"""Print a descriptive summary of the raw PhysioNet/CinC 2019 files.
+"""Print a descriptive summary of the dev patients of each hospital.
 
 Run with ``uv run python -m sepsis.data.inspect`` (always ``-m``: this module's
 name shadows the stdlib ``inspect`` if its folder lands on ``sys.path``).
@@ -14,16 +14,19 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-HOSPITAL_DIRS = {
-    "A": Path("training_setA") / "training_setA",
-    "B": Path("training_setB") / "training_setB",
-}
+from sepsis.data.load import HOSPITAL_DIRS, ID_COLUMNS, iter_patients
+from sepsis.data.splits import (
+    IncompleteCacheError,
+    SplitFingerprintError,
+    load_patient_hours,
+    load_project_split,
+)
 
 
 def load_patients(hospital_dir: Path) -> Iterator[pd.DataFrame]:
     """Yield one table per patient file, one at a time."""
-    for path in sorted(hospital_dir.glob("*.psv")):
-        yield pd.read_csv(path, sep="|", na_values="NaN")
+    for _, df in iter_patients(hospital_dir):
+        yield df
 
 
 def summarize(patients: Iterable[pd.DataFrame]) -> dict:
@@ -66,18 +69,23 @@ def format_report(name: str, s: dict) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--data-dir", type=Path, default=Path("data"))
     parser.add_argument("--hospital", choices=sorted(HOSPITAL_DIRS), default=None)
     args = parser.parse_args(argv)
 
-    names = [args.hospital] if args.hospital else sorted(HOSPITAL_DIRS)
+    # Dev patients only (ADR-0004): needs the cache and the split.
+    try:
+        split = load_project_split()
+        names = [args.hospital] if args.hospital else sorted(HOSPITAL_DIRS)
+        hours = load_patient_hours(names, split["patient_id"])
+    except (FileNotFoundError, SplitFingerprintError, IncompleteCacheError) as error:
+        print(f"{error}\nRun build_cache and make_split first (see README).", file=sys.stderr)
+        return 1
+
     reports = []
     for name in names:
-        directory = args.data_dir / HOSPITAL_DIRS[name]
-        if not directory.is_dir():
-            print(f"missing directory: {directory}", file=sys.stderr)
-            return 1
-        reports.append(format_report(name, summarize(load_patients(directory))))
+        rows = hours[hours["hospital"] == name].drop(columns=ID_COLUMNS[1:])
+        patients = (group.drop(columns="patient_id") for _, group in rows.groupby("patient_id"))
+        reports.append(format_report(f"{name} (dev patients)", summarize(patients)))
     print("\n\n".join(reports))
     return 0
 
