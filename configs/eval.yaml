@@ -1,0 +1,16 @@
+# Scoring and alarm-threshold tuning (M1-1, ADR-0007). Shared by every experiment.
+
+scorer:
+  # The official PhysioNet/CinC 2019 scorer, vendored and never edited.
+  path: third_party/evaluate_sepsis_score.py
+  # SHA-256 of the file with line endings normalised to LF. The loader refuses a file that differs.
+  sha256: 26b8b26267ed32e8b7a7a27e45201cfc8c6640e717ba4cdc1f452b32f12b99e5
+
+threshold:
+  # Candidate thresholds are observed out-of-fold scores of the training side, taken at evenly
+  # spaced quantiles, so one grid works for B0 (rule counts), B1 (probabilities) and B2 (U1 - U0).
+  # project_assumption: alarms are rare, so the grid covers the upper half of the scores.
+  grid:
+    quantile_min: 0.50
+    quantile_max: 0.999
+    n_points: 200
