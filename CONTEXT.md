@@ -31,7 +31,7 @@ Shared vocabulary for code, docs, tickets and prompts. If a term changes, change
 
 ## Models
 - **Risk model**: maps the view at t to a risk score (higher means more likely to alarm).
-- **Alarm**: the risk score exceeds the frozen threshold. This is what the utility scores.
+- **Alarm**: the risk score exceeds the frozen threshold (`score > threshold`, strictly). This is what the utility scores.
 - **Action model / VoI**: estimates the value of information of each panel: how much revealing it would change the risk or the alarm decision.
 - **WAIT**: no panel's VoI exceeds its cost.
 - **B0–B3**: baseline ladder. B0 rules (SIRS, PartialSOFA), B1 logistic, B2 LightGBM, B3 B2 + signatures.
@@ -45,11 +45,15 @@ Shared vocabulary for code, docs, tickets and prompts. If a term changes, change
 
 ## Evaluation
 - **Utility (U)**: the official per-hour points. **Normalized utility**: (observed − inaction) / (best − inaction) over the whole dataset.
-- **U1 / U0**: utility of predicting alarm / no alarm for one patient-hour. **U1 − U0** is the rank #1 regression target.
+- **U1 / U0**: utility of predicting alarm / no alarm for one patient-hour. **U1 − U0** (`utility_diff`) is the rank #1 regression target, built by `sepsis.labels.utility` with the scorer's constants in `configs/labels.yaml`. It uses the whole record, so it is a label, never a feature. The same holds for every other column of the target table (`dt, u1, u0, weight`; `LABEL_COLUMNS`).
+- **Target weight**: 1 for every scored hour, 0 for septic hours with dt > 3, which the scorer ignores (their target is 0).
 - **Labs per patient-day**: test burden metric reported next to utility.
 - **Setup**: how a model is trained and evaluated across hospitals (ADR-0004). **A → B**: train on A-dev, evaluate on B. **B → A**: the reverse. **Mix**: train on A-dev + B-dev with CV, report A and B patients separately (**mix → A**, **mix → B**). Mix is the optimistic number; A → B and B → A are the pessimistic ones.
 - **Training side**: the patients a setup trains and tunes on. Every fitted statistic, including the alarm threshold, comes from here.
 - **Eval side**: the dev patients a setup is evaluated on during development (B-dev for A → B). Not the same as the locked test part.
+- **Prediction table**: one row per patient-hour: `patient_id, hour, score` (the raw risk score, any scale), plus `alarm` (0/1) once a threshold is applied. It is what the scoring toolkit takes (ADR-0007).
+- **Out-of-fold predictions**: scores for training-side patients, each from a model that was not fitted on that patient's fold. The threshold is tuned on these only.
+- **Threshold grid**: the candidate thresholds for tuning: observed out-of-fold scores of the training side at evenly spaced quantiles (`configs/eval.yaml`).
 
 ## Guideline layer
 - **Rule**: YAML record with trigger, condition, action, source and provenance.
