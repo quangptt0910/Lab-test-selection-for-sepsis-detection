@@ -26,7 +26,10 @@ Shared vocabulary for code, docs, tickets and prompts. If a term changes, change
 - **Reveal delay**: rows between a request and its values joining the view (1: requested at t, visible from t + 1). The row they join is the **reveal row**.
 - **Revealed**: a lab value the system requested and that exists in the record within the panel's look-back window. It stays revealed from its reveal row on, and is never written into earlier rows.
 - **Unavailable request**: a panel was requested, but the record has no value in the panel's look-back window (rows ≤ t). It is logged, never imputed.
-- **View**: everything the system is allowed to see at hour t: all vitals ≤ t, plus revealed labs whose reveal row is ≤ t (so requested at t − 1 or earlier).
+- **View**: everything the system is allowed to see at hour t: all vitals ≤ t, plus revealed labs whose reveal row is ≤ t (so requested at t − 1 or earlier). Per lab it shows the revealed value recorded latest, and the row it was recorded. Built only by `sepsis.data.view`; `SepsisLabel` and `hospital` are never in it.
+- **Reveal-row table**: the record's rows, one column per lab, holding the reveal row of each recorded value (NaN: never revealed). One format for training (as recorded: recorded row + 1) and replay (request row + 1). `validate_reveal_rows` refuses a reveal sooner than the delay or older than the panel's look-back window.
+- **View table**: the view at every row of every patient at once (`ViewTable`: `values` and `lab_rows`), for training; `build_view_at` gives one patient's view at one row, for replay (cleaned and checked the same way).
+- **Panel-draw masking**: in training only, each panel draw (one patient, row and panel) is hidden with probability `lab_masking_p`, seeded per patient so a patient's mask is the same in every fold (ADR-0002, ADR-0006).
 - **Policy**: rule deciding which panel (or WAIT) to request each hour. Baselines: ALL, NONE, AS_RECORDED.
 
 ## Models
@@ -36,10 +39,16 @@ Shared vocabulary for code, docs, tickets and prompts. If a term changes, change
 - **WAIT**: no panel's VoI exceeds its cost.
 - **B0–B3**: baseline ladder. B0 rules (SIRS, PartialSOFA), B1 logistic, B2 LightGBM, B3 B2 + signatures.
 
+- **Feature block**: a named group of feature columns in `configs/features.yaml` (`core` on, `extras` off by default), built by one entry of `BLOCKS` in `sepsis.features.builder`. An experiment picks blocks by name (`hand_crafted`).
+- **Feature row**: one row of `build_features` output: `patient_id, hour`, `ICULOS`, the raw view columns minus `raw.exclude`, and the enabled blocks' columns. Built from the view only.
+- **Batch / hour by hour**: `build_features` on the view table (training) and `features_at` on `view_at` (replay) give identical rows.
+
 ## Clinical features
 - **PartialSOFA**: SOFA computed only from components available here: platelets, bilirubin, MAP, creatinine.
 - **Shock index**: HR / SBP.
-- **SIRS count**: 0–4 from Temp, HR, Resp/PaCO2, WBC (bands not available).
+- **SIRS count**: 0–4 from Temp, HR, Resp/PaCO2, WBC (bands not available). A criterion whose inputs are missing counts as not met.
+- **Partial qSOFA**: 0–2 from Resp ≥ 22 and SBP ≤ 100; altered mentation is not in the data.
+- **Component scores**: `sofa_<component>` and `news_<vital>` (NEWS2) score one input each and are NaN exactly when that input is NaN, so they add no missingness signal beyond the raw value. The sums (PartialSOFA, SIRS, qSOFA) score a missing input exactly like a normal one (ADR-0002).
 - **hours_since_<panel>**: rows since the most recent revealed value of the panel was recorded (not since it was requested); NaN if none was ever revealed.
 - **Signature**: summary of a path over a window. Level 1 = net changes; level 2 = signed areas (order of events).
 

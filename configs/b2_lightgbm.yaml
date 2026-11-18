@@ -11,10 +11,10 @@ split:
   setups: [A_to_B, B_to_A, mix]
 features:
   impute: ffill_nan_before_first
-  hand_crafted: [shock_index, bun_cr, partial_sofa, partial_sofa_delta_24h, hours_since_panel]
-  vital_windows_h: [6]       # rolling max/min
+  # Names of feature blocks in configs/features.yaml (core or extras); settings live there.
+  hand_crafted: [shock_index, bun_cr, partial_sofa, partial_sofa_delta, vital_minmax, hours_since_panel]
   signatures: null           # B3: {window_h: 8, depth: 2, channels: [partial_sofa, MAP, bun_cr]}
-  lab_masking_p: 0.3         # random lab hiding during training (ADR-0002)
+  lab_masking_p: 0.3         # hide each panel draw with this probability, training only (ADR-0002, ADR-0006)
 target: utility_diff         # U1 - U0
 model:
   type: lightgbm_regressor

@@ -13,6 +13,7 @@ Labs: `BaseExcess HCO3 FiO2 pH PaCO2 SaO2 AST BUN Alkalinephos Calcium Chloride 
 Static/time: `Age Gender Unit1 Unit2 HospAdmTime ICULOS`. Target column: `SepsisLabel`.
 
 ## 1. Imputation
+- **[ours]** Features read data only from `sepsis.data.view` (`ViewTable` for training, `view_at` in replay). It already cleans, applies the reveal rows and forward-fills; features never load records, labels or the patient table (`tests/test_import_guard.py`). `hours_since_<panel>` = row − the latest `lab_rows` value among the panel's labs.
 - Forward-fill within each patient, in time order.
 - Leave NaN before the first observed value. Do not mean-fill for LightGBM.
 - **[ours]** Labs forward-fill only from *revealed* values in the current view, starting at each value's reveal row (request row + 1), never at its recorded row. Panels, look-back windows and the reveal delay are in `configs/panels.yaml` (ADR-0006). No "component known" or other revealed/missing flags for labs (ADR-0002); `hours_since_<panel>` being NaN already says "never revealed".
@@ -25,9 +26,14 @@ Static/time: `Age Gender Unit1 Unit2 HospAdmTime ICULOS`. Target column: `Sepsis
 | `shock_index` | HR / SBP (NaN if SBP missing or 0) |
 | `bun_cr` | BUN / Creatinine |
 | `partial_sofa` | Sum of the four component scores below. A missing component scores 0. |
-| `partial_sofa_delta_24h` | partial_sofa(t) − min(partial_sofa over [t−24, t]) |
-| `<vital>_max_w`, `<vital>_min_w` | Rolling max/min over a look-back window (window from config) |
+| `partial_sofa_delta_24` | **[ours]** partial_sofa(t) − its min over the 24 rows ending at t (rows t−23 … t; rank #1 used t−24 … t) |
+| `sirs_count` | **[ours]** SIRS criteria met, 0–4; a criterion with missing inputs is not met |
+| `<vital>_max_<w>`, `<vital>_min_<w>` | Rolling max/min over the last w rows (HR, O2Sat, Temp, SBP, MAP, Resp; no DBP, EDA finding 3) |
 | `hours_since_<panel>` | **[ours]** Rows since the most recent revealed value of the panel was recorded (not since it was requested), NaN if none (ADR-0006). This replaces rank #1's measurement counts (ADR-0002). |
+
+Code: `sepsis.features.clinical`, `.vitals`, `.labs`; every threshold and window in `configs/features.yaml`. `sepsis.features.builder.build_features(view, config)` assembles the feature rows (keys, `ICULOS`, raw view columns minus `raw.exclude` — DBP and SaO2 — and every enabled block); `features_at(view_at(...))` gives the same row hour by hour for replay. **A new feature block** goes into `BLOCKS` in the builder and into `configs/features.yaml`; `tests/test_feature_leakage.py` then runs the no-future, unrevealed-lab and forbidden-column tests on it automatically.
+
+**[ours] Extras from the top-4 review, off by default** (`extras` in `configs/features.yaml`, switched on one at a time in M3): `sofa_<component>` and `news_<vital>` (NEWS2) component scores (NaN when the input is missing), `qsofa_partial` (0–2, no mentation), vital window mean/std, vital lags, 1-row vital differences. **No differences of lab values**, forward-filled or last-two (ADR-0002): lab trends come from `partial_sofa_delta_24`.
 
 ### PartialSOFA component thresholds (standard SOFA)
 | Component | Column (unit) | 0 | 1 | 2 | 3 | 4 |
