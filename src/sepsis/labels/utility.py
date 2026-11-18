@@ -62,6 +62,8 @@ def patient_utility(labels: Sequence[int] | np.ndarray, c: UtilityConstants) -> 
     never septic.
     """
     y = np.asarray(labels)
+    if not np.isin(y, [0, 1]).all():
+        raise ValueError("SepsisLabel must be 0 or 1")
     n = len(y)
     onset = t_sepsis(y)
     if np.isnan(onset):
@@ -105,6 +107,9 @@ def utility_targets(hours: pd.DataFrame, c: UtilityConstants) -> pd.DataFrame:
 
     `hours` needs `patient_id, hour, SepsisLabel` with every patient's complete record. Rows come
     back sorted by patient and hour; join on `patient_id, hour`.
+
+    The check refuses gaps and duplicates, but a record cut off at the end looks complete. Pass
+    whole records as `load_patient_hours` returns them, never a view or rows up to some hour t.
     """
     ordered = _check(hours)
     parts = [

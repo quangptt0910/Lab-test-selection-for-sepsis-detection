@@ -171,6 +171,14 @@ def test_bad_input_is_refused(constants: UtilityConstants, change, message: str)
         utility_targets(_bad(change), constants)
 
 
+@pytest.mark.parametrize("labels", [[0, 2], [0, -1, 1], [0.5, 1]])
+def test_patient_utility_refuses_labels_other_than_0_or_1(
+    constants: UtilityConstants, labels: list
+) -> None:
+    with pytest.raises(ValueError, match="0 or 1"):
+        patient_utility(labels, constants)
+
+
 def test_inconsistent_constants_are_refused() -> None:
     config = load_yaml(LABELS_CONFIG)
     config["utility"]["dt_optimal"] = -5  # SepsisLabel is shifted by 6 rows, not 5
