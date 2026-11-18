@@ -39,6 +39,10 @@ Shared vocabulary for code, docs, tickets and prompts. If a term changes, change
 - **WAIT**: no panel's VoI exceeds its cost.
 - **B0–B3**: baseline ladder. B0 rules (SIRS, PartialSOFA), B1 logistic, B2 LightGBM, B3 B2 + signatures.
 
+- **Feature block**: a named group of feature columns in `configs/features.yaml` (`core` on, `extras` off by default), built by one entry of `BLOCKS` in `sepsis.features.builder`. An experiment picks blocks by name (`hand_crafted`).
+- **Feature row**: one row of `build_features` output: `patient_id, hour`, `ICULOS`, the raw view columns minus `raw.exclude`, and the enabled blocks' columns. Built from the view only.
+- **Batch / hour by hour**: `build_features` on the view table (training) and `features_at` on `view_at` (replay) give identical rows.
+
 ## Clinical features
 - **PartialSOFA**: SOFA computed only from components available here: platelets, bilirubin, MAP, creatinine.
 - **Shock index**: HR / SBP.

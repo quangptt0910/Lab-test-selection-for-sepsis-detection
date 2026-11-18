@@ -1,8 +1,9 @@
 """ADR-0002: no lab counts, missing flags or "measured this hour" features.
 
-Every feature function runs with all flags on. Two records show the same lab values at every row,
-but one has extra draws of the same value: every feature except `hours_since_<panel>` (the value's
-age, allowed by ADR-0002) must be identical, so no feature counts or flags draws.
+Every feature block runs through the builder with all blocks on. Two records show the same lab
+values at every row, but one has extra draws of the same value: every feature except
+`hours_since_<panel>` (the value's age, allowed by ADR-0002) must be identical, so no feature
+counts or flags draws.
 """
 
 import re
@@ -13,8 +14,8 @@ import pytest
 
 from sepsis.config import FEATURES_CONFIG, load_yaml
 from sepsis.data.panels import PANELS_CONFIG
-from sepsis.data.view import as_recorded_reveal_rows, view_table
-from sepsis.features import clinical, labs, vitals
+from sepsis.data.view import ViewTable, as_recorded_reveal_rows, view_table
+from sepsis.features.builder import BLOCKS, build_features, with_blocks
 
 NAN = np.nan
 FORBIDDEN_NAME = re.compile(
@@ -28,34 +29,10 @@ def config() -> dict:
     return load_yaml(FEATURES_CONFIG)
 
 
-def _all_features(values: pd.DataFrame, lab_rows: pd.DataFrame, config: dict) -> pd.DataFrame:
-    t, extras = config["thresholds"], config["extras"]
-    vital_list = config["core"]["vital_minmax"]["vitals"]
-    parts = [
-        clinical.shock_index(values),
-        clinical.bun_cr(values),
-        clinical.sofa_components(values, t["sofa"]),
-        clinical.partial_sofa(values, t["sofa"]),
-        clinical.partial_sofa_delta(
-            values, t["sofa"], window_rows=config["core"]["partial_sofa_delta"]["window_rows"]
-        ),
-        clinical.sirs_count(values, t["sirs"]),
-        clinical.qsofa_partial(values, t["qsofa"]),
-        clinical.news_components(values, t["news2"]),
-        vitals.rolling_minmax(
-            values, vital_list, windows_rows=config["core"]["vital_minmax"]["windows_rows"]
-        ),
-        vitals.window_stats(
-            values,
-            vital_list,
-            windows_rows=extras["vital_window_stats"]["windows_rows"],
-            stats=extras["vital_window_stats"]["stats"],
-        ),
-        vitals.lags(values, vital_list, lags=extras["vital_lags"]["lags"]),
-        vitals.diffs(values, vital_list),
-        labs.hours_since_panel(lab_rows, load_yaml(PANELS_CONFIG)),
-    ]
-    return pd.concat(parts, axis=1)
+def all_features(view: ViewTable, config: dict) -> pd.DataFrame:
+    """Every feature block on, through the builder."""
+    cfg = with_blocks(config, list(BLOCKS))
+    return build_features(view, cfg, panels_config=load_yaml(PANELS_CONFIG))
 
 
 def _record(extra_draws: bool) -> pd.DataFrame:
@@ -88,8 +65,7 @@ def _record(extra_draws: bool) -> pd.DataFrame:
 
 def _features(extra_draws: bool, config: dict) -> pd.DataFrame:
     record = _record(extra_draws)
-    view = view_table(record, as_recorded_reveal_rows(record, delay=1))
-    return _all_features(view.values, view.lab_rows, config)
+    return all_features(view_table(record, as_recorded_reveal_rows(record, delay=1)), config)
 
 
 def test_no_feature_name_counts_or_flags_labs(config: dict) -> None:

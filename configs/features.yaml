@@ -9,6 +9,14 @@
 # provenance: thresholds are external_spec (sources below); windows and the vital lists are
 # project_assumption.
 
+# Raw view columns in each feature row: ICULOS, demographics, vitals and revealed labs, minus these.
+# An excluded lab also does not count toward its panel's hours_since_<panel>. A name that is not a
+# view column is an error.
+raw:
+  exclude:
+    - DBP    # 36.6% of A patients have none, so its NaN pattern marks hospital A (EDA finding 3)
+    - SaO2   # A may record non-arterial saturations as SaO2; O2Sat, pH, PaCO2 cover it (finding 9)
+
 # The rank #1 recipe (ADR-0001). On by default.
 core:
   shock_index: {enabled: true}          # HR / SBP

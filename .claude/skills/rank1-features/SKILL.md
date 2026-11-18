@@ -31,7 +31,7 @@ Static/time: `Age Gender Unit1 Unit2 HospAdmTime ICULOS`. Target column: `Sepsis
 | `<vital>_max_<w>`, `<vital>_min_<w>` | Rolling max/min over the last w rows (HR, O2Sat, Temp, SBP, MAP, Resp; no DBP, EDA finding 3) |
 | `hours_since_<panel>` | **[ours]** Rows since the most recent revealed value of the panel was recorded (not since it was requested), NaN if none (ADR-0006). This replaces rank #1's measurement counts (ADR-0002). |
 
-Code: `sepsis.features.clinical`, `.vitals`, `.labs`; every threshold and window in `configs/features.yaml`.
+Code: `sepsis.features.clinical`, `.vitals`, `.labs`; every threshold and window in `configs/features.yaml`. `sepsis.features.builder.build_features(view, config)` assembles the feature rows (keys, `ICULOS`, raw view columns minus `raw.exclude` — DBP and SaO2 — and every enabled block); `features_at(view_at(...))` gives the same row hour by hour for replay. **A new feature block** goes into `BLOCKS` in the builder and into `configs/features.yaml`; `tests/test_feature_leakage.py` then runs the no-future, unrevealed-lab and forbidden-column tests on it automatically.
 
 **[ours] Extras from the top-4 review, off by default** (`extras` in `configs/features.yaml`, switched on one at a time in M3): `sofa_<component>` and `news_<vital>` (NEWS2) component scores (NaN when the input is missing), `qsofa_partial` (0–2, no mentation), vital window mean/std, vital lags, 1-row vital differences. **No differences of lab values**, forward-filled or last-two (ADR-0002): lab trends come from `partial_sofa_delta_24`.
 
