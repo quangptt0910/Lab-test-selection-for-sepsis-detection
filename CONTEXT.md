@@ -26,7 +26,10 @@ Shared vocabulary for code, docs, tickets and prompts. If a term changes, change
 - **Reveal delay**: rows between a request and its values joining the view (1: requested at t, visible from t + 1). The row they join is the **reveal row**.
 - **Revealed**: a lab value the system requested and that exists in the record within the panel's look-back window. It stays revealed from its reveal row on, and is never written into earlier rows.
 - **Unavailable request**: a panel was requested, but the record has no value in the panel's look-back window (rows ≤ t). It is logged, never imputed.
-- **View**: everything the system is allowed to see at hour t: all vitals ≤ t, plus revealed labs whose reveal row is ≤ t (so requested at t − 1 or earlier).
+- **View**: everything the system is allowed to see at hour t: all vitals ≤ t, plus revealed labs whose reveal row is ≤ t (so requested at t − 1 or earlier). Per lab it shows the revealed value recorded latest, and the row it was recorded. Built only by `sepsis.data.view`; `SepsisLabel` and `hospital` are never in it.
+- **Reveal-row table**: the record's rows, one column per lab, holding the reveal row of each recorded value (NaN: never revealed). One format for training (as recorded: recorded row + 1) and replay (request row + 1). `validate_reveal_rows` refuses a reveal sooner than the delay or older than the panel's look-back window.
+- **View table**: the view at every row of every patient at once (`ViewTable`: `values` and `lab_rows`), for training; `build_view_at` gives one patient's view at one row, for replay (cleaned and checked the same way).
+- **Panel-draw masking**: in training only, each panel draw (one patient, row and panel) is hidden with probability `lab_masking_p`, seeded per patient so a patient's mask is the same in every fold (ADR-0002, ADR-0006).
 - **Policy**: rule deciding which panel (or WAIT) to request each hour. Baselines: ALL, NONE, AS_RECORDED.
 
 ## Models
