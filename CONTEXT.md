@@ -42,7 +42,9 @@ Shared vocabulary for code, docs, tickets and prompts. If a term changes, change
 ## Clinical features
 - **PartialSOFA**: SOFA computed only from components available here: platelets, bilirubin, MAP, creatinine.
 - **Shock index**: HR / SBP.
-- **SIRS count**: 0–4 from Temp, HR, Resp/PaCO2, WBC (bands not available).
+- **SIRS count**: 0–4 from Temp, HR, Resp/PaCO2, WBC (bands not available). A criterion whose inputs are missing counts as not met.
+- **Partial qSOFA**: 0–2 from Resp ≥ 22 and SBP ≤ 100; altered mentation is not in the data.
+- **Component scores**: `sofa_<component>` and `news_<vital>` (NEWS2) score one input each and are NaN exactly when that input is NaN, so they add no missingness signal beyond the raw value. The sums (PartialSOFA, SIRS, qSOFA) score a missing input exactly like a normal one (ADR-0002).
 - **hours_since_<panel>**: rows since the most recent revealed value of the panel was recorded (not since it was requested); NaN if none was ever revealed.
 - **Signature**: summary of a path over a window. Level 1 = net changes; level 2 = signed areas (order of events).
 

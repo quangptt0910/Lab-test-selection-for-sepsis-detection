@@ -10,6 +10,7 @@ In our replay, which labs are present is decided by **our own action model**. Th
 ## Decision
 - Lab features may use: last revealed value, `hours_since_<panel>` (NaN if never revealed), and values derived from revealed labs (PartialSOFA, BUN/Cr).
 - No counts of lab measurements, no missing/present run features, no "was measured this hour" flags for labs.
+- No differences of lab values, forward-filled or between the last two revealed values: the first is non-zero only when a new draw arrives, the second is NaN until a second draw (M2-2). Lab trends come from PartialSOFA's 24-row change.
 - Vitals are exempt: they are recorded every hour independent of our policy.
 - The risk model is trained with random lab masking so it learns to work on partial views.
 
