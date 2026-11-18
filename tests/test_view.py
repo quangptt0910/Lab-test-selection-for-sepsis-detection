@@ -281,6 +281,22 @@ def test_build_view_at_cleans_and_checks(panels: dict) -> None:
         build_view_at(record, reveal, 1, cleaning, panels)
 
 
+@pytest.mark.parametrize("t", [1.5, 2.0, True, "2", -1, 7])
+def test_view_at_needs_an_integer_row_of_the_record(t) -> None:
+    record = _record()
+    one = record[record["patient_id"] == "A_1"]  # rows 0..6
+    reveal = as_recorded_reveal_rows(one, delay=1)
+    with pytest.raises(ValueError, match="t must be"):
+        view_at(one, reveal, t)
+
+
+def test_view_at_accepts_numpy_integers() -> None:
+    record = _record()
+    one = record[record["patient_id"] == "A_1"]
+    view = view_at(one, as_recorded_reveal_rows(one, delay=1), np.int64(3))
+    assert view.t == 3 and len(view.latest()) == 1
+
+
 def test_view_at_needs_one_patient() -> None:
     record = _record()
     with pytest.raises(ValueError, match="one patient"):

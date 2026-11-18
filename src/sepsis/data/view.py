@@ -249,6 +249,9 @@ def view_at(record: pd.DataFrame, reveal_rows: pd.DataFrame, t: int) -> View:
     ids = record["patient_id"].unique()
     if len(ids) != 1 or set(reveal_rows["patient_id"].unique()) != set(ids):
         raise ValueError("view_at needs the record and reveal rows of one patient")
+    if isinstance(t, bool) or not isinstance(t, int | np.integer):
+        raise ValueError(f"t must be an integer row number, got {t!r}")
+    t = int(t)
     if not 0 <= t < len(record):
         raise ValueError(f"t must be a row of the record (0..{len(record) - 1}), got {t}")
     upto = record[record["hour"] <= t]
