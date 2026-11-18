@@ -1,0 +1,19 @@
+# U1 - U0 training target (M1-2, ADR-0001). Read by sepsis.labels.utility.
+#
+# The constants are the official PhysioNet/CinC 2019 utility (third_party/evaluate_sepsis_score.py,
+# compute_prediction_utility). provenance: external_spec. They are not tunable: a test fails if any
+# value differs from the scorer's defaults.
+#
+# dt = row - t_sepsis, with t_sepsis = first SepsisLabel == 1 row + 6 (rows, not ICULOS).
+# Septic hours with dt > dt_late are not scored: target 0, weight 0.
+
+target_column: utility_diff   # U1 - U0; matches `target:` in the experiment configs
+
+utility:
+  dt_early: -12     # earliest hour an alarm starts to earn reward
+  dt_optimal: -6    # full reward; also the 6-row label shift (SepsisLabel = 1 from here)
+  dt_late: 3        # last scored hour of a septic patient
+  max_u_tp: 1       # reward of an alarm at dt_optimal
+  min_u_fn: -2      # cost of no alarm at dt_late
+  u_fp: -0.05       # cost of an alarm for a patient who is not (yet) in the reward window
+  u_tn: 0           # no alarm for a non-septic patient
