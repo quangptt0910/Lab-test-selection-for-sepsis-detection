@@ -45,7 +45,8 @@ Shared vocabulary for code, docs, tickets and prompts. If a term changes, change
 
 ## Evaluation
 - **Utility (U)**: the official per-hour points. **Normalized utility**: (observed − inaction) / (best − inaction) over the whole dataset.
-- **U1 / U0**: utility of predicting alarm / no alarm for one patient-hour. **U1 − U0** is the rank #1 regression target.
+- **U1 / U0**: utility of predicting alarm / no alarm for one patient-hour. **U1 − U0** (`utility_diff`) is the rank #1 regression target, built by `sepsis.labels.utility` with the scorer's constants in `configs/labels.yaml`. It uses the whole record, so it is a label, never a feature. The same holds for every other column of the target table (`dt, u1, u0, weight`; `LABEL_COLUMNS`).
+- **Target weight**: 1 for every scored hour, 0 for septic hours with dt > 3, which the scorer ignores (their target is 0).
 - **Labs per patient-day**: test burden metric reported next to utility.
 - **Setup**: how a model is trained and evaluated across hospitals (ADR-0004). **A → B**: train on A-dev, evaluate on B. **B → A**: the reverse. **Mix**: train on A-dev + B-dev with CV, report A and B patients separately (**mix → A**, **mix → B**). Mix is the optimistic number; A → B and B → A are the pessimistic ones.
 - **Training side**: the patients a setup trains and tunes on. Every fitted statistic, including the alarm threshold, comes from here.

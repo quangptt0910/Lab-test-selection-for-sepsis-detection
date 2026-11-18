@@ -46,6 +46,8 @@ Cardiovascular scores 2–4 need vasopressor data, which this dataset doesn't ha
 - Pad windows shorter than the window length from the first available row. Never use rows > t.
 
 ## 4. Target: U1 − U0
+Implemented in `sepsis.labels.utility` (`utility_targets(hours, constants)` → `patient_id, hour, dt, u1, u0, utility_diff, weight`); constants in `configs/labels.yaml`, checked against the scorer's defaults by a test.
+
 Constants (official scorer): dt_early = −12, dt_optimal = −6, dt_late = 3, max_u_tp = 1, min_u_fn = −2, u_fp = −0.05, u_tn = 0.
 
 t_sepsis = index of the first `SepsisLabel == 1` row + 6. dt = t − t_sepsis.
