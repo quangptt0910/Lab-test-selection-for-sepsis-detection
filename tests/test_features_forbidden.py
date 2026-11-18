@@ -110,6 +110,17 @@ def test_extra_draws_of_the_same_value_change_nothing_but_the_age(config: dict) 
     assert not few[age].equals(many[age])  # the age does change, as intended
 
 
+def test_experiment_configs_name_existing_feature_blocks(config: dict) -> None:
+    from pathlib import Path
+
+    blocks = set(config["core"]) | set(config["extras"])
+    for path in sorted(Path("configs").glob("*.yaml")):
+        features = load_yaml(path).get("features")
+        if isinstance(features, dict) and "hand_crafted" in features:
+            unknown = sorted(set(features["hand_crafted"]) - blocks)
+            assert unknown == [], f"{path.name} names unknown feature blocks {unknown}"
+
+
 def test_extras_are_off_by_default(config: dict) -> None:
     assert all(not block["enabled"] for block in config["extras"].values())
     assert all(block["enabled"] for block in config["core"].values())
