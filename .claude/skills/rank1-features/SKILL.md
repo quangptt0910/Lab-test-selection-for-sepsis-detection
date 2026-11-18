@@ -13,6 +13,7 @@ Labs: `BaseExcess HCO3 FiO2 pH PaCO2 SaO2 AST BUN Alkalinephos Calcium Chloride 
 Static/time: `Age Gender Unit1 Unit2 HospAdmTime ICULOS`. Target column: `SepsisLabel`.
 
 ## 1. Imputation
+- **[ours]** Features read data only from `sepsis.data.view` (`ViewTable` for training, `view_at` in replay). It already cleans, applies the reveal rows and forward-fills; features never load records, labels or the patient table (`tests/test_import_guard.py`). `hours_since_<panel>` = row − the latest `lab_rows` value among the panel's labs.
 - Forward-fill within each patient, in time order.
 - Leave NaN before the first observed value. Do not mean-fill for LightGBM.
 - **[ours]** Labs forward-fill only from *revealed* values in the current view, starting at each value's reveal row (request row + 1), never at its recorded row. Panels, look-back windows and the reveal delay are in `configs/panels.yaml` (ADR-0006). No "component known" or other revealed/missing flags for labs (ADR-0002); `hours_since_<panel>` being NaN already says "never revealed".
