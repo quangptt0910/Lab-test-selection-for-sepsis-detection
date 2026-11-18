@@ -231,7 +231,7 @@ The rank 1 hand-crafted features adapted to replay, plus the techniques kept in 
 Depends on: M2-1
 Tasks:
 - `shock_index` and `bun_cr` (a zero or missing denominator gives NaN).
-- PartialSOFA (a missing component scores 0; no "component known" flags, ADR-0002) and `partial_sofa_delta_24h`.
+- PartialSOFA (a missing component scores 0; no "component known" flags, ADR-0002) and its 24-row change (`partial_sofa_delta`).
 - SIRS count (0–4), with missing-value handling documented.
 - Rolling vital max/min over windows from config.
 - `hours_since_<panel>` (NaN if the panel was never revealed).

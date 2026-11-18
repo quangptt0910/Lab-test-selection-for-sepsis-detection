@@ -1,0 +1,76 @@
+# Clinical features (M2-2). Read by sepsis.features. Assembled into model rows in M2-3.
+#
+# Every feature is computed from the view (sepsis.data.view) only: vitals of rows <= t and labs
+# revealed by t, forward-filled. Windows count rows and end at t, t included (ADR-0005); a window
+# shorter than its length at the start of a stay uses the rows that exist.
+# No lab counts, missing flags or lab differences (ADR-0002); labs give their latest value and
+# hours_since_<panel> only.
+#
+# provenance: thresholds are external_spec (sources below); windows and the vital lists are
+# project_assumption.
+
+# The rank #1 recipe (ADR-0001). On by default.
+core:
+  shock_index: {enabled: true}          # HR / SBP
+  bun_cr: {enabled: true}               # BUN / Creatinine
+  partial_sofa: {enabled: true}         # sum of the four SOFA components below; missing -> 0
+  partial_sofa_delta: {enabled: true, window_rows: 24}   # partial_sofa(t) - its min over the window
+  sirs: {enabled: true}                 # SIRS count 0-4; a criterion with missing input is not met
+  vital_minmax:
+    enabled: true
+    # DBP is left out: 36.6% of A patients have no DBP, so its missingness marks hospital A
+    # (docs/eda/README.md, finding 3).
+    vitals: [HR, O2Sat, Temp, SBP, MAP, Resp]
+    windows_rows: [6]
+  hours_since_panel: {enabled: true}    # rows since the panel's latest revealed value was recorded
+
+# Kept from the top-4 review (docs/research/top4-solutions.md, "use" and "adapt"). Their gains in
+# the papers were within noise, so they are off by default and switched on one at a time (M3).
+extras:
+  component_scores: {enabled: false}    # SOFA per component, NEWS2 per vital, partial qSOFA (team #0)
+  vital_window_stats:                   # teams #2, #3, #0
+    enabled: false
+    vitals: [HR, O2Sat, Temp, SBP, MAP, Resp]
+    windows_rows: [6, 24]
+    stats: [mean, std]
+  vital_lags:                           # team #2: values of the previous rows
+    enabled: false
+    vitals: [HR, O2Sat, Temp, SBP, MAP, Resp]
+    lags: [1, 2, 3]
+  vital_diffs:                          # teams #2, #0: change since the previous row (vitals only)
+    enabled: false
+    vitals: [HR, O2Sat, Temp, SBP, MAP, Resp]
+
+thresholds:
+  # SOFA (Vincent et al. 1996), the components this data has. `below`: score = number of cut-offs
+  # the value is below. `at_or_above`: number of cut-offs the value reaches. Cardiovascular 2-4
+  # needs vasopressor data, which the record does not have.
+  sofa:
+    coagulation:    {column: Platelets,       direction: below,       cutoffs: [150, 100, 50, 20]}
+    liver:          {column: Bilirubin_total, direction: at_or_above, cutoffs: [1.2, 2.0, 6.0, 12.0]}
+    cardiovascular: {column: MAP,             direction: below,       cutoffs: [70]}
+    renal:          {column: Creatinine,      direction: at_or_above, cutoffs: [1.2, 2.0, 3.5, 5.0]}
+
+  # SIRS (Bone et al. 1992). A criterion is met if any of its conditions holds; a missing value
+  # does not meet a condition. Band counts are not in the data.
+  sirs:
+    temperature: [{column: Temp, op: ">", value: 38.0}, {column: Temp, op: "<", value: 36.0}]
+    heart_rate:  [{column: HR, op: ">", value: 90}]
+    respiration: [{column: Resp, op: ">", value: 20}, {column: PaCO2, op: "<", value: 32}]
+    white_cells: [{column: WBC, op: ">", value: 12}, {column: WBC, op: "<", value: 4}]
+
+  # qSOFA (Seymour et al. 2016) without altered mentation, which the data does not have: 0-2.
+  qsofa:
+    respiration: [{column: Resp, op: ">=", value: 22}]
+    systolic:    [{column: SBP, op: "<=", value: 100}]
+
+  # NEWS2 (Royal College of Physicians 2017), SpO2 scale 1. The bands are defined on readings
+  # rounded to `resolution` (whole numbers; Temp to 0.1 degC), so a value is rounded half up first
+  # (38.04 -> 38.0, 91.5 -> 92). It then scores scores[k], where k is the first upper bound
+  # (inclusive) it does not exceed; above the last bound: last score.
+  news2:
+    Resp:  {resolution: 1,   upper: [8, 11, 20, 24],          scores: [3, 1, 0, 2, 3]}
+    O2Sat: {resolution: 1,   upper: [91, 93, 95],             scores: [3, 2, 1, 0]}
+    SBP:   {resolution: 1,   upper: [90, 100, 110, 219],      scores: [3, 2, 1, 0, 3]}
+    HR:    {resolution: 1,   upper: [40, 50, 90, 110, 130],   scores: [3, 1, 0, 1, 2, 3]}
+    Temp:  {resolution: 0.1, upper: [35.0, 36.0, 38.0, 39.0], scores: [3, 1, 0, 1, 2]}
