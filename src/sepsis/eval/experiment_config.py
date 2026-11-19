@@ -13,7 +13,7 @@ from typing import Any
 
 from sepsis.eval.threshold import SETUPS
 from sepsis.features.builder import with_blocks
-from sepsis.risk.base import MODELS
+from sepsis.risk.base import MODEL_TARGETS, MODELS
 
 # Experiment `target` -> the target-table column a model is trained on.
 TARGET_COLUMN = {"utility_diff": "utility_diff", "sepsis_label": "SepsisLabel"}
@@ -91,8 +91,14 @@ def validate_experiment_config(
 
 
 def check_model_type(cfg: Mapping[str, Any], models: Mapping[str, Any] = MODELS) -> None:
-    """Raise `ExperimentConfigError` if `model.type` is not a registered model."""
-    if cfg["model"]["type"] not in models:
+    """Raise `ExperimentConfigError` if `model.type` is not registered or can't take `target`."""
+    model_type = cfg["model"]["type"]
+    if model_type not in models:
         raise ExperimentConfigError(
-            f"model.type {cfg['model']['type']!r} is not registered; known: {sorted(models)}"
+            f"model.type {model_type!r} is not registered; known: {sorted(models)}"
+        )
+    targets = MODEL_TARGETS.get(model_type)
+    if targets is not None and cfg["target"] not in targets:
+        raise ExperimentConfigError(
+            f"{model_type} needs target in {targets}, not {cfg['target']!r}"
         )

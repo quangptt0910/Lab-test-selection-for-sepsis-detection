@@ -46,8 +46,7 @@ def test_valid_config_passes() -> None:
 def test_the_b2_config_follows_the_schema() -> None:
     cfg = load_yaml("configs/b2_lightgbm.yaml")
     validate_experiment_config(cfg, FEATURES)
-    with pytest.raises(ExperimentConfigError, match="not registered"):
-        check_model_type(cfg)  # lightgbm_regressor is registered in M3-2
+    check_model_type(cfg)  # lightgbm_regressor, registered in M3-2
 
 
 @pytest.mark.parametrize(

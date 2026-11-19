@@ -286,8 +286,8 @@ Acceptance:
 The three baseline risk models behind one common interface.
 Depends on: M2-3
 Tasks:
-- B0: a rule score from SIRS and PartialSOFA. It outputs a score and gets a threshold tuned on the training side like every model, not the fixed "SIRS >= 2" rule (79% of A-dev non-septic patients reach SIRS >= 2 at some hour).
-- B1: logistic regression with fill values and scaling fitted on training folds. The docs don't define its target; suggested `SepsisLabel` with `dt` > 3 weighted 0.
+- B0: a rule score `w·sirs_count + w·partial_sofa` (weights in config, default 1 and 1). It outputs a score and gets a threshold tuned on the training side like every model, not the fixed "SIRS >= 2" rule (79% of A-dev non-septic patients reach SIRS >= 2 at some hour).
+- B1: logistic regression on `sepsis_label` (weight 0 for `dt` > 3) with fills and scaling fitted on training folds: lab normals (ADR-0005), BUN/Cr from the normals, `hours_since_<panel>` the training max, other columns the training median. Score = log-odds.
 - B2: LightGBM regressor on U1 − U0 with sample weights, NaN passed through, parameters from config.
 - Register all three in `sepsis.risk.base.MODELS` under the M3-1 interface (B2 as `lightgbm_regressor`).
 Acceptance:
