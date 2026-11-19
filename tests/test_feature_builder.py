@@ -98,6 +98,9 @@ def test_with_blocks(config: dict) -> None:
 def test_b2_config_blocks_resolve(config: dict) -> None:
     names = load_yaml("configs/b2_lightgbm.yaml")["features"]["hand_crafted"]
     with_blocks(config, names)
+    # B2 is exactly the core section (rank #1 blocks + SIRS, ADR-0001), so the two can't drift.
+    core = {name for name, block in config["core"].items() if block["enabled"]}
+    assert sorted(names) == sorted(core)
 
 
 def test_mismatched_values_and_lab_rows_are_refused(config: dict, panels: dict) -> None:
