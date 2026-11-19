@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from lightgbm import LGBMRegressor
+from lightgbm import Booster, LGBMRegressor
 
 # Set by the runner, never by an experiment config: the seed comes from the config's `seed`
 # (ADR-0008), and runs are deterministic. Every LightGBM alias is listed: an explicit seed such as
@@ -58,6 +58,13 @@ class LightGBMRegressor:
             verbose=-1,
         ).fit(X, y, sample_weight=sample_weight)
         return self
+
+    @property
+    def booster(self) -> Booster:
+        """The fitted LightGBM booster (for gain importance and SHAP contributions)."""
+        if self.model_ is None:
+            raise RuntimeError("call fit first")
+        return self.model_.booster_
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         if self.model_ is None:

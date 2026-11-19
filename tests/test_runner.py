@@ -283,8 +283,10 @@ def test_red_flag_when_the_two_directions_differ() -> None:
 
 
 def _main(p: dict, config: Path, *extra: str, git=CLEAN) -> int:
+    # In-process (--jobs 1) unless a test asks: worker processes don't see monkeypatches.
+    jobs = [] if "--jobs" in extra else ["--jobs", "1"]
     return main(
-        [str(config), *extra],
+        [str(config), *jobs, *extra],
         root=p["root"],
         git_check=git,
         grid=GRID,
@@ -481,3 +483,24 @@ def test_dummy_b_to_a_on_real_dev_data(tmp_path: Path) -> None:
     run = tmp_path / "experiments" / "runs" / "smoke-001"
     scores = json.loads((run / "scores.json").read_text(encoding="utf-8"))
     assert 0.0 < scores["B_to_A"]["auroc"] < 1.0
+
+
+def test_parallel_setups_give_the_same_run_as_serial(toy: dict) -> None:
+    serial = experiment(toy["root"], id="toy-serial")
+    parallel = experiment(toy["root"], id="toy-parallel")
+    assert _main(toy, serial) == 0
+    assert _main(toy, parallel, "--jobs", "3") == 0
+    runs = toy["root"] / "experiments" / "runs"
+    one, other = (
+        json.loads((runs / i / "scores.json").read_text()) for i in ("toy-serial", "toy-parallel")
+    )
+    assert one == other
+    for setup in ("A_to_B", "B_to_A", "mix"):
+        a = pd.read_parquet(runs / "toy-serial" / setup / "predictions.parquet")
+        b = pd.read_parquet(runs / "toy-parallel" / setup / "predictions.parquet")
+        pd.testing.assert_frame_equal(a, b)
+        assert (runs / "toy-serial" / setup / "thresholds.json").read_text() == (
+            runs / "toy-parallel" / setup / "thresholds.json"
+        ).read_text()
+    meta = json.loads((runs / "toy-parallel" / "meta.json").read_text())
+    assert meta["setup_jobs"] == 3
