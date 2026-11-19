@@ -236,10 +236,12 @@ def main(
     preprocessing = load_yaml(PREPROCESSING_CONFIG)["b1"]  # B1's fills and log labs (ADR-0005)
     grid = dict(eval_config["threshold"]["grid"] if grid is None else grid)
     parallel = eval_config["parallel"]
-    jobs = int(parallel["setup_jobs"] if args.jobs is None else args.jobs)
     setups = list(cfg["split"]["setups"])
+    jobs = min(int(parallel["setup_jobs"] if args.jobs is None else args.jobs), len(setups))
     results = {}
-    if jobs > 1 and len(setups) > 1 and dev.cache_dir is not None:
+    if not (len(setups) > 1 and dev.cache_dir is not None):
+        jobs = 1  # serial: one setup, or no cache for workers to read the tables from
+    if jobs > 1:
         # Speed only: each worker makes the serial path's run_setup call on the same cached
         # tables, so the results are the same (tests/test_runner.py checks this).
         common = dict(
@@ -252,7 +254,7 @@ def main(
             grid=grid,
             score_jobs=int(parallel["score_jobs"]),
         )
-        with ProcessPoolExecutor(max_workers=min(jobs, len(setups))) as pool:
+        with ProcessPoolExecutor(max_workers=jobs) as pool:
             futures = {s: pool.submit(run_setup_job, SetupJob(setup=s, **common)) for s in setups}
             results = {s: future.result() for s, future in futures.items()}
     else:
@@ -313,7 +315,7 @@ def main(
             "config": str(args.config),
             "seed": cfg["seed"],
             "cache": dev.cache,
-            "setup_jobs": jobs,
+            "setup_jobs": jobs,  # the processes actually used (1: serial)
             "scorer_sha256": scorer_sha256(Path(eval_config["scorer"]["path"])),
             "versions": _versions(),
             "setup_seconds": {s: r.seconds for s, r in results.items()},
