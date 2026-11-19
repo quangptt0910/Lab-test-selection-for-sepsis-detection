@@ -37,7 +37,7 @@ Shared vocabulary for code, docs, tickets and prompts. If a term changes, change
 - **Alarm**: the risk score exceeds the frozen threshold (`score > threshold`, strictly). This is what the utility scores.
 - **Action model / VoI**: estimates the value of information of each panel: how much revealing it would change the risk or the alarm decision.
 - **WAIT**: no panel's VoI exceeds its cost.
-- **B0–B3**: baseline ladder. B0 rules (SIRS, PartialSOFA), B1 logistic, B2 LightGBM, B3 B2 + signatures.
+- **B0–B3**: baseline ladder, registered in `sepsis.risk.base.MODELS`. B0 `rule_score`: a fixed weighted sum of SIRS count and PartialSOFA with a tuned threshold. B1 `logistic`: logistic regression on `sepsis_label` with the ADR-0005 fills, score = log-odds. B2 `lightgbm_regressor`: LightGBM on U1 − U0. B3: B2 + signatures.
 
 - **Feature block**: a named group of feature columns in `configs/features.yaml` (`core` on, `extras` off by default), built by one entry of `BLOCKS` in `sepsis.features.builder`. An experiment picks blocks by name (`hand_crafted`).
 - **Feature row**: one row of `build_features` output: `patient_id, hour`, `ICULOS`, the raw view columns minus `raw.exclude`, and the enabled blocks' columns. Built from the view only.

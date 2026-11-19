@@ -26,3 +26,13 @@ Two facts shape the choice:
 - The vital medians differ between A → B and B → A, so B1 can fill the same patient differently per setup. This is the intended training-side behaviour.
 - LightGBM can still learn "this vital is missing" through its NaN branch, and DBP missingness marks hospital A (finding 3). That is handled by the M2 feature choice (proposal: use MAP and SBP, not DBP), not by preprocessing.
 - The cleaning limits and panel windows were chosen from A-dev and B-dev together. They are not fitted per setup, but A → B and B → A results should be read knowing the evaluated hospital informed them (as in `configs/cleaning.yaml`).
+
+## Note (M3-2): B1's fills for the other feature columns
+The feature row holds more than raw labs and vitals. `sepsis.risk.logistic` fills each column inside `fit`, from its training rows only:
+- labs in `b1.lab_fill`: the fixed normal (as above);
+- `bun_cr`: BUN normal / Creatinine normal, so an untested patient's ratio is a normal ratio;
+- `hours_since_<panel>`: the training rows' maximum. A panel never revealed must look like the longest gap seen, never like a recent test; a median would claim the patient was tested a few hours ago;
+- every other column (vitals, vital-derived features, `Unit1`, `Unit2`, `HospAdmTime`): the training rows' median;
+- a column with no value in the training rows: 0. It is then constant there and carries no weight.
+
+B1's score is its log-odds (`decision_function`). The ranking and alarms are those of the probability, and the scorer's `expit` (ADR-0007) turns it back into the model's own probability.
