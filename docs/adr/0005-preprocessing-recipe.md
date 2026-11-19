@@ -33,6 +33,9 @@ The feature row holds more than raw labs and vitals. `sepsis.risk.logistic` fill
 - `bun_cr`: BUN normal / Creatinine normal, so an untested patient's ratio is a normal ratio;
 - `hours_since_<panel>`: the training rows' maximum. A panel never revealed must look like the longest gap seen, never like a recent test; a median would claim the patient was tested a few hours ago;
 - every other column (vitals, vital-derived features, `Unit1`, `Unit2`, `HospAdmTime`): the training rows' median;
-- a column with no value in the training rows: 0. It is then constant there and carries no weight.
+- a `hours_since_<panel>` with no value in the training rows (the panel was never revealed there): the longest stay, the training max of `ICULOS`;
+- any other column with no value in the training rows: 0. It is then constant there and carries no weight.
+
+These fill statistics and the scaler use every training row unweighted, including the weight-0 rows (septic hours with dt > 3): they are training rows, and only the classifier's loss is weighted.
 
 B1's score is its log-odds (`decision_function`). The ranking and alarms are those of the probability, and the scorer's `expit` (ADR-0007) turns it back into the model's own probability.

@@ -76,6 +76,9 @@ def _logistic(
 ) -> LogisticBaseline:
     """B1. params: `C`, `max_iter`. Fills and log labs from `preprocessing` (ADR-0005)."""
     _only(params, {"C", "max_iter"}, "logistic")
+    missing = sorted({"C", "max_iter"} - set(params))
+    if missing:
+        raise ValueError(f"logistic needs params {missing} in the experiment config")
     if preprocessing is None:
         raise ValueError("logistic needs the b1 section of configs/preprocessing.yaml")
     # Keys the model implements one way only: refuse any other value instead of ignoring it.
@@ -85,8 +88,8 @@ def _logistic(
     return LogisticBaseline(
         lab_fill={lab: entry["value"] for lab, entry in preprocessing["lab_fill"].items()},
         log_labs=preprocessing["log_labs"],
-        C=params.get("C", 1.0),
-        max_iter=params.get("max_iter", 1000),
+        C=params["C"],
+        max_iter=params["max_iter"],
         seed=seed,
     )
 
@@ -94,7 +97,11 @@ def _logistic(
 def _lightgbm(
     params: Mapping[str, Any], seed: int, preprocessing: Preprocessing
 ) -> LightGBMRegressor:
-    """B2. params: any `LGBMRegressor` parameter except the seed and determinism ones."""
+    """B2. params: any `LGBMRegressor` parameter except the seed and determinism ones.
+
+    Unlike B0 and B1 there is no allow-list: LightGBM takes many parameters (M3-3 tunes them), and
+    it rejects unknown ones itself at fit.
+    """
     return LightGBMRegressor(params, seed)
 
 

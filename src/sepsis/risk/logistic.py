@@ -6,7 +6,10 @@ Fills, per column (no missing flags, ADR-0002):
 - `hours_since_<panel>`: the training rows' maximum, so a panel never revealed looks like the
   longest gap seen, never like a recent test;
 - any other column: the training rows' median.
-A column with no value in the training rows gets 0 (it is then constant and carries no weight).
+A `hours_since_<panel>` with no value in the training rows gets the longest stay (`ICULOS` max);
+any other column with no value gets 0 (it is then constant and carries no weight).
+Fills and the scaler use every training row unweighted, weight-0 rows included (they are training
+rows; only the classifier's loss is weighted).
 Then `log1p` on the right-skewed labs and a standard scaler, both fitted on the training rows.
 
 The score is the log-odds (`decision_function`): same ranking and alarms as the probability, and
@@ -51,13 +54,23 @@ class LogisticBaseline:
                 fill[column] = self.lab_fill[column]
             elif column == "bun_cr":
                 fill[column] = self.lab_fill["BUN"] / self.lab_fill["Creatinine"]
+            elif column.startswith(HOURS_SINCE_PREFIX):
+                fill[column] = self._longest_gap(X, values)
             elif not np.isfinite(values).any():
                 fill[column] = 0.0
-            elif column.startswith(HOURS_SINCE_PREFIX):
-                fill[column] = float(np.nanmax(values))
             else:
                 fill[column] = float(np.nanmedian(values))
         return fill
+
+    @staticmethod
+    def _longest_gap(X: pd.DataFrame, values: np.ndarray) -> float:
+        """The training max of `hours_since_<panel>`; if the panel was never revealed in the
+        training rows, the longest stay (`ICULOS` max): never revealed must not look recent."""
+        if np.isfinite(values).any():
+            return float(np.nanmax(values))
+        if "ICULOS" in X.columns and np.isfinite(X["ICULOS"].to_numpy(dtype=float)).any():
+            return float(np.nanmax(X["ICULOS"].to_numpy(dtype=float)))
+        return 0.0
 
     def _prepare(self, X: pd.DataFrame) -> np.ndarray:
         """Fill, then log1p the skewed labs, in one float64 array (no scaling)."""

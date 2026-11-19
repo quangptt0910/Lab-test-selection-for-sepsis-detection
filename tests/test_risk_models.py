@@ -66,7 +66,9 @@ SMALL_GBM = {"n_estimators": 5, "min_child_samples": 2, "colsample_bytree": 0.5,
 def test_rule_score_is_the_weighted_sum() -> None:
     X = table(0)
     model = RuleScore({"sirs_count": 1.0, "partial_sofa": 2.0})
+    before = dict(vars(model))
     assert model.fit(X, labels(), np.ones(len(X))) is model
+    assert vars(model) == before  # nothing is fitted
     np.testing.assert_array_equal(model.predict(X), X["sirs_count"] + 2 * X["partial_sofa"])
 
 
@@ -116,12 +118,12 @@ def test_logistic_fills_and_scaler_come_from_the_training_rows_only() -> None:
     np.testing.assert_allclose(scores, expected)
 
 
-def test_logistic_falls_back_to_zero_for_columns_with_no_training_value() -> None:
-    X = table(0).assign(hours_since_LACTATE=NAN, Unit1=NAN)
+def test_logistic_fallbacks_for_columns_with_no_training_value() -> None:
+    X = table(0).assign(hours_since_LACTATE=NAN, Unit1=NAN, ICULOS=np.arange(40.0) + 3)
     model = logistic().fit(X, labels(), np.ones(len(X)))
-    assert model.fill_["hours_since_LACTATE"] == 0.0
+    assert model.fill_["hours_since_LACTATE"] == 42.0  # never revealed: the longest stay
     assert model.fill_["Unit1"] == 0.0
-    assert np.isfinite(model.predict(table(1))).all()
+    assert np.isfinite(model.predict(table(1).assign(ICULOS=np.arange(40.0)))).all()
 
 
 def test_logistic_returns_log_odds() -> None:
@@ -240,6 +242,11 @@ def test_logistic_factory_needs_the_preprocessing_config() -> None:
     assert model.lab_fill["Lactate"] == PREPROCESSING["lab_fill"]["Lactate"]["value"]
 
 
+def test_logistic_factory_needs_its_params_from_the_config() -> None:
+    with pytest.raises(ValueError, match="max_iter"):
+        make_model("logistic", {"C": 1.0}, seed=0, preprocessing=PREPROCESSING)
+
+
 def test_rule_score_factory_needs_weights() -> None:
     with pytest.raises(ValueError, match="weights"):
         make_model("rule_score", {}, seed=0)
@@ -287,7 +294,7 @@ def test_baselines_fit_one_real_fold(model_type: str) -> None:
     from sepsis.eval.tables import build_tables
 
     split = load_project_split()
-    a_dev = split[(split["hospital"] == "A")]
+    a_dev = split[(split["hospital"] == "A") & (split["split"] == "dev")]
     hours = load_patient_hours(["A"], a_dev["patient_id"])
     b2 = load_yaml(Path("configs/b2_lightgbm.yaml"))
     tables = build_tables(hours, replace(settings(), blocks=tuple(b2["features"]["hand_crafted"])))
