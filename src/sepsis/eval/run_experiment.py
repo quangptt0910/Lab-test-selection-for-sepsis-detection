@@ -92,12 +92,14 @@ def main(
     argv: list[str] | None = None,
     *,
     root: Path = Path("."),
-    data_config: Path = DATA_CONFIG,
-    protocol_config: Path = PROTOCOL_CONFIG,
     git_check: GitCheck = git_state,
     grid: Mapping[str, float] | None = None,
 ) -> int:
-    """Run the experiment. The keyword arguments exist for tests only; never pass them elsewhere."""
+    """Run the experiment. The keyword arguments exist for tests only; never pass them elsewhere.
+
+    Data always comes from the project's configs (`DATA_CONFIG`, `PROTOCOL_CONFIG`) through the
+    split loaders' defaults; no caller can point a run at another split.
+    """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("config", type=Path)
     parser.add_argument("--allow-dirty", action="store_true", help="run on a dirty tree (-dirty)")
@@ -121,13 +123,8 @@ def main(
     sha = f"{sha}-dirty" if dirty else sha
 
     # 2. Dev patients only (ADR-0004): the split and patient-hours never include test patients.
-    split = load_project_split(_data_config=data_config, _protocol_config=protocol_config)
-    hours = load_patient_hours(
-        ["A", "B"],
-        split["patient_id"],
-        _data_config=data_config,
-        _protocol_config=protocol_config,
-    )
+    split = load_project_split()
+    hours = load_patient_hours(["A", "B"], split["patient_id"])
     hours = hours.sort_values(KEYS, kind="stable").reset_index(drop=True)
     labels = hours[[*KEYS, "hospital", "SepsisLabel"]]
 
@@ -141,8 +138,8 @@ def main(
         features=features_config,
         labels=UtilityConstants.from_config(load_yaml(LABELS_CONFIG)),
     )
-    cache_dir = None if args.no_cache else Path(load_yaml(data_config)["cache_dir"]) / "features"
-    fingerprint = str(load_yaml(protocol_config)["split"]["fingerprint"])
+    cache_dir = None if args.no_cache else Path(load_yaml(DATA_CONFIG)["cache_dir"]) / "features"
+    fingerprint = str(load_yaml(PROTOCOL_CONFIG)["split"]["fingerprint"])
     tables, cache = load_or_build(
         hours, settings, split_fingerprint=fingerprint, cache_dir=cache_dir
     )

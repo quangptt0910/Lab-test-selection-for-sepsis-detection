@@ -1,4 +1,5 @@
 import json
+from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -94,13 +95,21 @@ def test_models_fit_only_on_the_training_side_and_never_predict_their_own_patien
 ) -> None:
     _, models = _run(tables, labels, setup)
     pid = tables.targets["patient_id"]
-    plans = plan_setup(SPLIT, setup)
-    assert len(models) == sum(len(p.inner) + 1 for p in plans)
-    allowed = set().union(*(training_side_patients(SPLIT, setup, p.outer_fold) for p in plans))
-    for model in models:
+    # Models are made in plan order: each plan's inner folds, then its refit.
+    expected = []
+    for plan in plan_setup(SPLIT, setup):
+        side = training_side_patients(SPLIT, setup, plan.outer_fold)
+        expected += [(set(fit), set(oof), side, set(plan.scored)) for _, fit, oof in plan.inner]
+        expected.append((set(plan.refit), set(plan.scored), side, set()))
+    assert len(models) == len(expected)
+    for model, (fit_ids, predict_ids, side, scored) in zip(models, expected, strict=True):
         fitted = set(pid[model.fit_index])
         predicted = set(pid[model.predict_index])
-        assert fitted <= allowed  # never the evaluated hospital or the held-out mix fold
+        assert fitted == fit_ids and predicted == predict_ids
+        # Each model stays inside its own plan's training side: never the evaluated hospital,
+        # never the held-out mix fold k (inner models neither fit nor predict fold k).
+        assert fitted <= side
+        assert not (fitted | predicted) & scored
         assert not fitted & TEST_IDS and not predicted & TEST_IDS
         assert not fitted & predicted  # out-of-fold and scored rows come from other patients
         # The dummy's fitted statistic comes from its training rows only.
@@ -181,8 +190,6 @@ def _main(p: dict, config: Path, *extra: str, git=CLEAN) -> int:
     return main(
         [str(config), *extra],
         root=p["root"],
-        data_config=p["data_config"],
-        protocol_config=p["protocol_config"],
         git_check=git,
         grid=GRID,
     )
@@ -212,6 +219,16 @@ def toy(tmp_path: Path, shared: Path, monkeypatch) -> dict:
     for name in ("read_cache", "read_raw_hospital", "read_raw_all"):
         monkeypatch.setattr(load_module, name, forbidden)
     monkeypatch.setattr(splits_module, "read_cache_patients", spy)
+    # Point the CLI at the toy project: the real loaders, with the toy configs as their defaults.
+    configs = {"_data_config": p["data_config"], "_protocol_config": p["protocol_config"]}
+    monkeypatch.setattr(cli, "DATA_CONFIG", p["data_config"])
+    monkeypatch.setattr(cli, "PROTOCOL_CONFIG", p["protocol_config"])
+    monkeypatch.setattr(
+        cli, "load_project_split", partial(splits_module.load_project_split, **configs)
+    )
+    monkeypatch.setattr(
+        cli, "load_patient_hours", partial(splits_module.load_patient_hours, **configs)
+    )
     p["requested"] = requested
     return p
 
@@ -309,7 +326,7 @@ def test_an_unregistered_model_is_refused_before_any_work(toy: dict, monkeypatch
 
 @pytest.mark.slow
 def test_dummy_b_to_a_on_real_dev_data(tmp_path: Path) -> None:
-    from sepsis.config import DATA_CONFIG, PROTOCOL_CONFIG, load_yaml
+    from sepsis.config import DATA_CONFIG, load_yaml
 
     data = load_yaml(DATA_CONFIG)
     if not Path(data["split_path"]).exists() or not Path(data["cache_dir"]).exists():
@@ -323,8 +340,6 @@ def test_dummy_b_to_a_on_real_dev_data(tmp_path: Path) -> None:
         main(
             [str(config), "--no-cache"],
             root=tmp_path,
-            data_config=DATA_CONFIG,
-            protocol_config=PROTOCOL_CONFIG,
             git_check=CLEAN,
         )
         == 0
