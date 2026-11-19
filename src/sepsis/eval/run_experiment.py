@@ -28,6 +28,7 @@ from importlib.metadata import version
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 import yaml
 
 from sepsis.config import (
@@ -43,7 +44,7 @@ from sepsis.data.splits import load_patient_hours, load_project_split
 from sepsis.eval.experiment_config import check_model_type, validate_experiment_config
 from sepsis.eval.runner import log_row, red_flags, run_setup
 from sepsis.eval.scorer import scorer_sha256
-from sepsis.eval.tables import KEYS, TableSettings, load_or_build
+from sepsis.eval.tables import KEYS, Tables, TableSettings, load_or_build
 from sepsis.features.builder import with_blocks
 from sepsis.labels.utility import LABELS_CONFIG, UtilityConstants
 from sepsis.risk.base import make_model
@@ -83,6 +84,37 @@ def logged_ids(log_path: Path) -> set[str]:
         if line.startswith("|") and cells and cells[0] not in ("id", "") and set(cells[0]) != {"-"}:
             ids.add(cells[0])
     return ids
+
+
+def load_dev_tables(
+    cfg: Mapping[str, Any], *, no_cache: bool = False, lab_masking_p: float | None = None
+) -> tuple[Tables, pd.DataFrame, pd.DataFrame, dict, TableSettings]:
+    """Dev patients only (ADR-0004), then the model tables of `cfg` (cached unless `no_cache`).
+
+    Returns `(tables, labels, split, cache_info, settings)`; `labels` are the patient-hour rows
+    (`patient_id, hour, hospital, SepsisLabel`) aligned with the tables. `lab_masking_p`
+    overrides the config's value (the ordering diagnostic's full-information setting).
+    """
+    split = load_project_split()
+    hours = load_patient_hours(["A", "B"], split["patient_id"])
+    hours = hours.sort_values(KEYS, kind="stable").reset_index(drop=True)
+    labels = hours[[*KEYS, "hospital", "SepsisLabel"]]
+    masking = cfg["features"]["lab_masking_p"] if lab_masking_p is None else lab_masking_p
+    settings = TableSettings(
+        blocks=tuple(cfg["features"]["hand_crafted"]),
+        lab_masking_p=float(masking),
+        seed=int(cfg["seed"]),
+        cleaning=load_yaml(CLEANING_CONFIG),
+        panels=load_yaml(PANELS_CONFIG),
+        features=load_yaml(FEATURES_CONFIG),
+        labels=UtilityConstants.from_config(load_yaml(LABELS_CONFIG)),
+    )
+    cache_dir = None if no_cache else Path(load_yaml(DATA_CONFIG)["cache_dir"]) / "features"
+    fingerprint = str(load_yaml(PROTOCOL_CONFIG)["split"]["fingerprint"])
+    tables, cache = load_or_build(
+        hours, settings, split_fingerprint=fingerprint, cache_dir=cache_dir
+    )
+    return tables, labels, split, cache, settings
 
 
 def append_log_row(log_path: Path, row: str) -> None:
@@ -137,26 +169,8 @@ def main(
     sha = f"{sha}-dirty" if dirty else sha
 
     # 2. Dev patients only (ADR-0004): the split and patient-hours never include test patients.
-    split = load_project_split()
-    hours = load_patient_hours(["A", "B"], split["patient_id"])
-    hours = hours.sort_values(KEYS, kind="stable").reset_index(drop=True)
-    labels = hours[[*KEYS, "hospital", "SepsisLabel"]]
-
     # 3. Model tables, built once for all dev patients (cached unless --no-cache).
-    settings = TableSettings(
-        blocks=tuple(cfg["features"]["hand_crafted"]),
-        lab_masking_p=float(cfg["features"]["lab_masking_p"]),
-        seed=int(cfg["seed"]),
-        cleaning=load_yaml(CLEANING_CONFIG),
-        panels=load_yaml(PANELS_CONFIG),
-        features=features_config,
-        labels=UtilityConstants.from_config(load_yaml(LABELS_CONFIG)),
-    )
-    cache_dir = None if args.no_cache else Path(load_yaml(DATA_CONFIG)["cache_dir"]) / "features"
-    fingerprint = str(load_yaml(PROTOCOL_CONFIG)["split"]["fingerprint"])
-    tables, cache = load_or_build(
-        hours, settings, split_fingerprint=fingerprint, cache_dir=cache_dir
-    )
+    tables, labels, split, cache, settings = load_dev_tables(cfg, no_cache=args.no_cache)
 
     # 4. Run each setup.
     eval_config = load_yaml(EVAL_CONFIG)

@@ -300,12 +300,12 @@ Depends on: M3-1, M3-2
 Explain: evaluation
 Tasks:
 - Run the B0, B1 and B2 configs under all three setups.
-- Tune B2 hyperparameters with CV on the training side only. Keep a change only if the mix result improves and A → B and B → A don't drop by more than `selection.cross_hospital_tolerance` in `configs/protocol.yaml`.
+- Tune B2 with a small grid of one-change configs (bagging on, 500 trees at learning rate 0.02, num_leaves 15, min_child_samples 500, no `hours_since_panel`), each a full 3-setup run. Keep a change only if the mean of mix → A and mix → B rises and neither A → B nor B → A drops by more than `selection.cross_hospital_tolerance` in `configs/protocol.yaml`; combine two or more kept changes into one more run.
 - Check feature importance (or SHAP) for anything suspicious.
 - Report the gap between the mix and cross-hospital results, and link it to the hospital differences from M0-4.
 - Compare with the published rank 1 numbers, and explain the gap (ADR-0002, no hospital C).
 - Ablation: B2 without `hours_since_panel` (it points in opposite directions in A and B).
-- Ordering-signal diagnostic (analysis only, ADR-0002): an as-recorded model with lab counts and missingness, under A → B and B → A, to measure how much utility comes from ordering behaviour.
+- Ordering-signal diagnostic (analysis only, ADR-0002, report not LOG): B2 with and without lab-count and just-revealed columns at `lab_masking_p = 0`, under A → B and B → A, to measure how much utility comes from ordering behaviour.
 - Decide `subsample_freq` (rank #1's `subsample` has no effect without it).
 Acceptance:
 - LOG rows exist for B0, B1, B2 and the tuned B2, and B2 beats B0 in all three setups (the M3 check).

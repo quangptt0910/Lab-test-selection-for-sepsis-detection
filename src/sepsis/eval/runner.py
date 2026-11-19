@@ -92,6 +92,18 @@ def _plan(setup: str, training: pd.DataFrame, scored: tuple[str, ...], k: int | 
     return FoldPlan(setup, k, inner, refit=_ids(training), scored=scored)
 
 
+def patient_rows(tables: Tables, ids: Sequence[str]) -> np.ndarray:
+    """Boolean mask of the table rows of `ids`; raises if a patient has no rows.
+
+    Integer codes per patient: np.isin on string ids took ~6 min per call on all dev rows.
+    """
+    pid, patient_index = pd.factorize(tables.targets["patient_id"])
+    codes = pd.Index(patient_index).get_indexer(list(ids))
+    if (codes < 0).any():
+        raise ValueError("a planned patient has no rows in the tables")
+    return np.isin(pid, codes)
+
+
 def _check_aligned(tables: Tables, labels: pd.DataFrame) -> None:
     if not labels[KEYS].reset_index(drop=True).equals(tables.targets[KEYS]):
         raise ValueError("labels must have the same (patient_id, hour) rows as the tables")
@@ -115,18 +127,13 @@ def run_setup(
     """
     _check_aligned(tables, labels)
     start = time.perf_counter()
-    # Integer codes per patient: np.isin on string ids took ~6 min per call on all dev rows.
-    pid, patient_index = pd.factorize(tables.targets["patient_id"])
     y = tables.targets[TARGET_COLUMN[target]].to_numpy(dtype=float)
     weight = tables.targets["weight"].to_numpy(dtype=float)
     X_train = tables.train_X[tables.feature_columns]
     X_eval = tables.eval_X[tables.feature_columns]
 
     def rows(ids: Sequence[str]) -> np.ndarray:
-        codes = pd.Index(patient_index).get_indexer(list(ids))
-        if (codes < 0).any():
-            raise ValueError("a planned patient has no rows in the tables")
-        return np.isin(pid, codes)
+        return patient_rows(tables, ids)
 
     def fit_predict(
         fit_ids: Sequence[str], predict_ids: Sequence[str], fold_row: dict[str, Any]
