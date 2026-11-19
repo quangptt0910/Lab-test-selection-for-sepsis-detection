@@ -112,9 +112,40 @@ def utility_targets(hours: pd.DataFrame, c: UtilityConstants) -> pd.DataFrame:
     whole records as `load_patient_hours` returns them, never a view or rows up to some hour t.
     """
     ordered = _check(hours)
-    parts = [
-        patient_utility(rows["SepsisLabel"].to_numpy(), c)
-        for _, rows in ordered.groupby("patient_id", sort=False)
-    ]
-    values = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame(columns=COLUMNS[2:])
+    # Vectorised `patient_utility` over all patients at once (equality is tested on edge cases).
+    hour = ordered["hour"].to_numpy(dtype=float)
+    first = (
+        ordered["hour"]
+        .where(ordered["SepsisLabel"] == 1)
+        .groupby(ordered["patient_id"])
+        .transform("min")
+        .to_numpy(dtype=float)
+    )  # first SepsisLabel == 1 row of the patient; NaN if never septic
+    never = np.isnan(first)
+    dt = hour - (first + LABEL_LEAD_HOURS)
+    m1 = c.max_u_tp / (c.dt_optimal - c.dt_early)
+    b1 = -m1 * c.dt_early
+    m2 = -c.max_u_tp / (c.dt_late - c.dt_optimal)
+    b2 = -m2 * c.dt_late
+    m3 = c.min_u_fn / (c.dt_late - c.dt_optimal)
+    b3 = -m3 * c.dt_optimal
+    with np.errstate(invalid="ignore"):
+        early = dt <= c.dt_optimal
+        window = (dt > c.dt_optimal) & (dt <= c.dt_late)
+        septic_u1 = np.where(
+            early, np.maximum(m1 * dt + b1, c.u_fp), np.where(window, m2 * dt + b2, 0.0)
+        )
+        septic_u0 = np.where(window, m3 * dt + b3, 0.0)
+        septic_weight = (dt <= c.dt_late).astype(float)
+    u1 = np.where(never, float(c.u_fp), septic_u1)
+    u0 = np.where(never, float(c.u_tn), septic_u0)
+    values = pd.DataFrame(
+        {
+            "dt": dt,
+            "u1": u1,
+            "u0": u0,
+            "utility_diff": u1 - u0,
+            "weight": np.where(never, 1.0, septic_weight),
+        }
+    )
     return pd.concat([ordered[KEYS], values], axis=1)[COLUMNS]

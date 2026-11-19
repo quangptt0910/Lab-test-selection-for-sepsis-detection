@@ -217,11 +217,57 @@ def test_real_dev_patients_match_the_scorer(constants: UtilityConstants) -> None
         _check_against_scorer(labels, constants, seed)
         # The table form returns the same values, in hour order, for this patient.
         assert rows["hour"].tolist() == list(range(len(labels)))
-        np.testing.assert_allclose(
-            rows["utility_diff"].to_numpy(), patient_utility(labels, constants)["utility_diff"]
-        )
+        expected = patient_utility(labels, constants)
+        for column in ["dt", "u1", "u0", "utility_diff", "weight"]:
+            np.testing.assert_allclose(rows[column].to_numpy(), expected[column].to_numpy())
 
 
 def test_non_septic_dt_is_nan(constants: UtilityConstants) -> None:
     targets = utility_targets(toy_hours(["A_n"]), constants)
     assert all(math.isnan(v) for v in targets["dt"])
+
+
+# --- The table form equals the per-patient reference ---------------------------------------------
+
+EDGE_PATIENTS = {
+    "p_never": [0] * 7,
+    "p_from_row_0": [1] * 5,
+    "p_single_septic": [1],
+    "p_single_not": [0],
+    "p_last_row_only": [0] * 9 + [1],  # onset (row 15) lies beyond the record
+    "p_long": [0] * 30 + [1] * 12,
+}
+
+
+def _hours(patients: dict[str, list[int]]) -> pd.DataFrame:
+    return pd.concat(
+        [
+            pd.DataFrame({"patient_id": pid, "hour": range(len(y)), "SepsisLabel": y})
+            for pid, y in patients.items()
+        ],
+        ignore_index=True,
+    )
+
+
+def _reference(hours: pd.DataFrame, constants: UtilityConstants) -> pd.DataFrame:
+    ordered = hours.sort_values(["patient_id", "hour"]).reset_index(drop=True)
+    parts = [
+        patient_utility(rows["SepsisLabel"].to_numpy(), constants)
+        for _, rows in ordered.groupby("patient_id", sort=True)
+    ]
+    return pd.concat([ordered[["patient_id", "hour"]], pd.concat(parts, ignore_index=True)], axis=1)
+
+
+def test_table_form_equals_patient_utility_on_edge_cases(constants: UtilityConstants) -> None:
+    hours = _hours(EDGE_PATIENTS)
+    shuffled = hours.sample(frac=1, random_state=4)
+    pd.testing.assert_frame_equal(
+        utility_targets(shuffled, constants), _reference(hours, constants), check_dtype=False
+    )
+
+
+def test_table_form_of_an_empty_table(constants: UtilityConstants) -> None:
+    empty = pd.DataFrame({"patient_id": [], "hour": pd.Series([], dtype=int), "SepsisLabel": []})
+    out = utility_targets(empty, constants)
+    assert list(out.columns) == ["patient_id", "hour", "dt", "u1", "u0", "utility_diff", "weight"]
+    assert out.empty

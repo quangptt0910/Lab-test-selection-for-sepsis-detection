@@ -3,7 +3,7 @@
 !/data/splits/
 /data/splits/*
 !/data/splits/split.csv
-/runs/
+/experiments/runs/
 # Reference papers and the teams' submitted code: contain model files and a patient file
 /papers/
 *.parquet
@@ -22,3 +22,8 @@ uv.lock
 !.claude/skills/rank1-features/
 !.claude/skills/run-experiment/
 !.claude/skills/add-guideline-rule/
+# Local handoff notes and their figures (kept out of the repo)
+/docs/M2_handoff.md
+/docs/M2_summary.json
+/docs/figures/
+/figures/

@@ -11,6 +11,7 @@ DATA_CONFIG = Path("configs/data.yaml")
 PROTOCOL_CONFIG = Path("configs/protocol.yaml")
 EVAL_CONFIG = Path("configs/eval.yaml")
 FEATURES_CONFIG = Path("configs/features.yaml")
+CLEANING_CONFIG = Path("configs/cleaning.yaml")
 
 
 def load_yaml(path: Path) -> dict[str, Any]:
