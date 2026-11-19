@@ -7,41 +7,25 @@ argument-hint: configs/<name>.yaml
 
 Run the experiment defined in `$ARGUMENTS`.
 
-Every experiment runs all three setups on **dev data only** (ADR-0004). Each hospital was split once into dev (80%) and test (20%); A-test and B-test are never read here.
+The runner (ADR-0008) does the work: `uv run python -m sepsis.eval.run_experiment $ARGUMENTS`. It runs every setup listed in the config on **dev data only** (ADR-0004); A-test and B-test are never read.
 - `A_to_B` (pessimistic): train and tune on A-dev, evaluate on B-dev.
 - `B_to_A` (pessimistic): train and tune on B-dev, evaluate on A-dev.
 - `mix` (optimistic): nested CV over the stored folds on A-dev + B-dev, reported separately for A and B patients.
 
-Patients and folds come only from the split file, through `sepsis.data.splits` (`load_project_split()`, then `cross_hospital()` or `mix_folds()`; patient-hours via `load_patient_hours(hospitals, patient_ids)`). Never create folds or splits inside an experiment.
+Your job is the checks around it and the judgment after it. Never run experiments with ad-hoc scripts.
 
 1. **Pre-flight**
-   - The config exists and has `id`, `hypothesis`, `model`, `features`, `split` (with `split.setups`).
-   - `git status` is clean, or the user agreed to log a dirty tree. Record `git rev-parse --short HEAD`.
+   - The config exists. The runner checks its schema strictly (unknown keys are refused) and refuses an `id` already in `experiments/LOG.md` or an existing `experiments/runs/<id>/`.
+   - `git status` is clean, or the user agreed to log a dirty tree (`--allow-dirty`; the SHA then ends in `-dirty`). `experiments/LOG.md` and untracked configs don't count.
    - `make check` passes (on Windows without `make`, the three `uv run` commands in `CLAUDE.md`). If not, stop and report.
-   - The `id` is not already in `experiments/LOG.md`. Never reuse an id.
-   - Nothing in the config or code path loads A-test or B-test (no `final_eval=True`), and the split file matches `split.fingerprint` in `configs/protocol.yaml`.
-2. **A → B and B → A.** For each direction (`cross_hospital(split, train=...)`):
-   - Run CV over the stored folds of the training hospital's dev part. Fit every fill statistic, scaler and calibration on the training folds only.
-   - Tune the alarm threshold on those out-of-fold predictions with the official scorer, then freeze it.
-   - Fit on the whole training dev part and score the other hospital's dev part with the frozen threshold. Never tune anything on the evaluated hospital.
-3. **Mix (nested CV).** Patient ids are hospital-prefixed (`A_p000001`) so they never collide.
-   - The outer folds are the 5 stored folds from the split file (`mix_folds()`). For outer fold k, run an inner CV over the other 4 stored folds only, tune the alarm threshold on the inner out-of-fold predictions, then fit on all 4 folds and score fold k with that threshold. A held-out fold is never used to tune its own threshold.
-   - Fit every statistic on the training patients of the fold only.
-   - Score the held-out predictions **separately** for A patients (mix → A) and B patients (mix → B).
-4. **Score** each run with `third_party/evaluate_sepsis_score.py`, unmodified.
-   - Write per-patient prediction files in the challenge format (`PredictedProbability|PredictedLabel`).
-   - Read AUROC and utility (5th value). Save each threshold in the run folder.
-   - Replay experiments also report labs per patient-day and the unavailable-request rate.
-5. **Log**: append one row to `experiments/LOG.md`:
-   `| id | date | sha | config | eval | A→B utility | B→A utility | mix→A utility | mix→B utility | AUROC (mean of 4) | labs/pt-day | note |`
-   - `eval` is `dev` here. Only the final evaluation writes `test` rows.
-   - Mix columns are the optimistic numbers and A→B / B→A the pessimistic ones. Never merge them into one number.
-   - If a setup was not run, write `—`, never an estimate.
-6. **Compare** with the best previous row of the same kind, on all four columns. Say plainly whether the hypothesis held. A change is kept only if mix improves without A→B or B→A dropping by more than `selection.cross_hospital_tolerance` in `configs/protocol.yaml`. Report the gap between mix and cross-hospital results.
-7. **Report** to the user: the commands run, the scorer output lines, and the new LOG row. No metric without its command output.
+   - The model type is registered in `sepsis.risk.base.MODELS`.
+2. **Run** `uv run python -m sepsis.eval.run_experiment $ARGUMENTS` (add `--no-cache` only to force a rebuild of the feature tables). Expect about 37 model fits for a full run. Partial runs (fewer setups) are logged with `—` and the note "partial run: not comparable".
+3. **Read the outputs.** The run folder `experiments/runs/<id>/` holds `scores.json`, per-setup `thresholds.json`, `threshold_curve.csv`, `folds.csv` and `predictions.parquet`, and `meta.json`. The runner prints the scores, the new LOG row and any red flags.
+4. **Compare** with the best previous row of the same kind, on all four columns. Say plainly whether the hypothesis held. A change is kept only if mix improves without A→B or B→A dropping by more than `selection.cross_hospital_tolerance` in `configs/protocol.yaml`, and never on a partial run. Report the gap between mix and cross-hospital results.
+5. **Report** to the user: the command run, the scores it printed, and the new LOG row. No metric without its command output.
 
-Red flags. Stop and suspect leakage, then ask the leakage-reviewer subagent:
-- Utility jumps by more than 0.05 from one small change.
-- AUROC above 0.95.
+Red flags. Stop and suspect leakage, then ask the leakage-reviewer subagent. The runner writes the first three into the LOG note; the fourth needs your comparison:
+- AUROC above 0.95 in any setup.
 - A→B and B→A differ by more than 0.15.
 - A cross-hospital result beats the mix result for the same evaluated hospital (A→B above mix→B, or B→A above mix→A). Mix trains on that hospital, so it should be the easier setting; this points to a bug.
+- Utility jumps by more than 0.05 from one small change.

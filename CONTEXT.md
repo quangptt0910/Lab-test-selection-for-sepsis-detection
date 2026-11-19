@@ -33,7 +33,7 @@ Shared vocabulary for code, docs, tickets and prompts. If a term changes, change
 - **Policy**: rule deciding which panel (or WAIT) to request each hour. Baselines: ALL, NONE, AS_RECORDED.
 
 ## Models
-- **Risk model**: maps the view at t to a risk score (higher means more likely to alarm).
+- **Risk model**: maps the feature row built from the view at t to a risk score (higher means more likely to alarm). Every model follows one interface, `fit(X, y, sample_weight)` and `predict(X) -> raw score` (`sepsis.risk.base`, ADR-0008).
 - **Alarm**: the risk score exceeds the frozen threshold (`score > threshold`, strictly). This is what the utility scores.
 - **Action model / VoI**: estimates the value of information of each panel: how much revealing it would change the risk or the alarm decision.
 - **WAIT**: no panel's VoI exceeds its cost.
@@ -62,6 +62,9 @@ Shared vocabulary for code, docs, tickets and prompts. If a term changes, change
 - **Eval side**: the dev patients a setup is evaluated on during development (B-dev for A → B). Not the same as the locked test part.
 - **Prediction table**: one row per patient-hour: `patient_id, hour, score` (the raw risk score, any scale), plus `alarm` (0/1) once a threshold is applied. It is what the scoring toolkit takes (ADR-0007).
 - **Out-of-fold predictions**: scores for training-side patients, each from a model that was not fitted on that patient's fold. The threshold is tuned on these only.
+- **Run folder**: `experiments/runs/<id>/` (gitignored): everything one run of an experiment config produced (configs used, thresholds, predictions, scores, metadata). Its summary is one row of `experiments/LOG.md` (ADR-0008).
+- **Feature cache**: the training and evaluation feature tables and targets of an experiment, stored as parquet under `data/cache/features/` and keyed by everything that shapes them, configs and code included.
+- **Partial run**: a run of fewer than all three setups. Its LOG row has `—` for setups not run and is never used to keep a change.
 - **Threshold grid**: the candidate thresholds for tuning: observed out-of-fold scores of the training side at evenly spaced quantiles (`configs/eval.yaml`).
 
 ## Guideline layer

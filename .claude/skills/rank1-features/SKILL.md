@@ -77,7 +77,7 @@ Required unit-test values for U1 − U0:
 
 Also cross-check against the official scorer: for a toy patient, flipping one hour's prediction must change the scorer's raw utility by exactly U1 − U0 for that hour.
 
-Train LightGBM as a regressor (MSE) on this target. Alarm = prediction > threshold, tuned on validation with the official scorer, then frozen.
+Train LightGBM as a regressor (MSE) on this target, with `sample_weight = weight` (0 for septic hours with dt > 3). Alarm = prediction > threshold, tuned on validation with the official scorer, then frozen.
 
 ## 5. Tests every feature change needs
 - **No-future test:** perturb all rows > t; features at t are unchanged.
