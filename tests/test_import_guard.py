@@ -1,19 +1,24 @@
-"""Feature and action code may see data only through the view (sepsis.data.view).
+"""Feature, action and risk-model code may see data only through the view (sepsis.data.view).
 
-An allowlist: inside the `sepsis` package, guarded code may import only the modules below and its
-own package. Everything else (the loaders, the patient table, labels, the EDA, and modules that
-re-export loaders such as `sepsis.data.quality`) is refused. Relative imports are resolved first.
+An allowlist per guarded package: inside the `sepsis` package, guarded code may import only the
+modules listed for it and its own package. Everything else (the loaders, the patient table, labels,
+the EDA, and modules that re-export loaders such as `sepsis.data.quality`) is refused. Relative
+imports are resolved first.
 
-`risk/` is not guarded here: training the risk model needs the U1 - U0 target (`sepsis.labels`).
-Risk code that computes features at a row must still go through the view.
+`risk/` receives feature rows and targets from the experiment runner (`sepsis.eval`), so it may
+import `sepsis.features` (for replay-time feature rows) but never the loaders or `sepsis.labels`.
 """
 
 import ast
 from pathlib import Path
 
 SRC = Path(__file__).resolve().parents[1] / "src"
-GUARDED = ["sepsis.features", "sepsis.action"]
-ALLOWED = ["sepsis.config", "sepsis.data.view", "sepsis.data.columns", "sepsis.data.panels"]
+VIEW_ONLY = ["sepsis.config", "sepsis.data.view", "sepsis.data.columns", "sepsis.data.panels"]
+GUARDED = {
+    "sepsis.features": VIEW_ONLY,
+    "sepsis.action": VIEW_ONLY,
+    "sepsis.risk": ["sepsis.config", "sepsis.features"],
+}
 
 
 def _module_name(path: Path) -> str:
@@ -40,7 +45,7 @@ def _imports(path: Path, module: str) -> list[str]:
 def _allowed(name: str, own_package: str) -> bool:
     if name != "sepsis" and not name.startswith("sepsis."):
         return True  # third-party and standard library
-    allowed = [*ALLOWED, own_package]
+    allowed = [*GUARDED[own_package], own_package]
     return any(name == ok or name.startswith(ok + ".") for ok in allowed)
 
 
@@ -51,7 +56,7 @@ def forbidden_imports(path: Path, own_package: str) -> list[str]:
 def test_guarded_code_reads_data_only_through_the_view() -> None:
     # Passes trivially until features/ or action/ exist; then every file is checked.
     found = {}
-    for package in GUARDED:
+    for package in GUARDED:  # every guarded package, each with its own allowlist
         for path in sorted((SRC / package.replace(".", "/")).rglob("*.py")):
             names = forbidden_imports(path, package)
             if names:
@@ -59,8 +64,8 @@ def test_guarded_code_reads_data_only_through_the_view() -> None:
     assert found == {}
 
 
-def _fake(tmp_path: Path, text: str) -> Path:
-    path = tmp_path / "sepsis" / "features" / "fake.py"
+def _fake(tmp_path: Path, text: str, package: str = "features") -> Path:
+    path = tmp_path / "sepsis" / package / "fake.py"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text)
     return path
@@ -97,3 +102,24 @@ def test_the_guard_allows_the_view_and_its_own_package(tmp_path: Path, monkeypat
         "from sepsis.features.clinical import shock_index\n",
     )
     assert forbidden_imports(ok, "sepsis.features") == []
+
+
+def test_risk_code_may_use_features_but_never_labels_or_loaders(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(__import__(__name__), "SRC", tmp_path)
+    fake = _fake(
+        tmp_path,
+        "from sepsis.features.builder import features_at\n"
+        "from sepsis.config import load_yaml\n"
+        "from .base import RiskModel\n"
+        "from sepsis.labels.utility import utility_targets\n"
+        "from sepsis.data.splits import load_patient_hours\n"
+        "from sepsis.eval.scorer import score\n",
+        package="risk",
+    )
+    assert forbidden_imports(fake, "sepsis.risk") == [
+        "sepsis.labels.utility.utility_targets",
+        "sepsis.data.splits.load_patient_hours",
+        "sepsis.eval.scorer.score",
+    ]

@@ -18,6 +18,7 @@ Most of the gain came from simple parts: forward-fill, hand-crafted clinical fea
 - B2 = forward-fill (NaN before first value) + ICULOS + raw values + PartialSOFA (+24 h change) + shock index + BUN/Cr + rolling vital max/min + `hours_since_<panel>`, trained with LightGBM on U1 − U0.
 - B3 = B2 + signature features, kept only if it beats B2 in both hospital-held-out directions.
 - Measurement-count features are excluded (ADR-0002).
+- Note (M3-1): B2 also includes the SIRS count, which rank #1 did not use, so B2 is exactly the `core` section of `configs/features.yaml` and "B2 beats B0" compares models with the same rule inputs. Its LightGBM parameters start from rank #1's regularised random-search values (`docs/research/1_…md`). Other clinical scores (criterion scores, NEWS2, qSOFA) are tested as an ablation, not as part of B2.
 
 ## Consequences
 - The baseline is strong and well understood, so later gains are measurable.

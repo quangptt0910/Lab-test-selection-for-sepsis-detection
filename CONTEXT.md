@@ -33,11 +33,11 @@ Shared vocabulary for code, docs, tickets and prompts. If a term changes, change
 - **Policy**: rule deciding which panel (or WAIT) to request each hour. Baselines: ALL, NONE, AS_RECORDED.
 
 ## Models
-- **Risk model**: maps the view at t to a risk score (higher means more likely to alarm).
+- **Risk model**: maps the feature row built from the view at t to a risk score (higher means more likely to alarm). Every model follows one interface, `fit(X, y, sample_weight)` and `predict(X) -> raw score` (`sepsis.risk.base`, ADR-0008).
 - **Alarm**: the risk score exceeds the frozen threshold (`score > threshold`, strictly). This is what the utility scores.
 - **Action model / VoI**: estimates the value of information of each panel: how much revealing it would change the risk or the alarm decision.
 - **WAIT**: no panel's VoI exceeds its cost.
-- **B0–B3**: baseline ladder. B0 rules (SIRS, PartialSOFA), B1 logistic, B2 LightGBM, B3 B2 + signatures.
+- **B0–B3**: baseline ladder, registered in `sepsis.risk.base.MODELS`. B0 `rule_score`: a fixed weighted sum of SIRS count and PartialSOFA with a tuned threshold. B1 `logistic`: logistic regression on `sepsis_label` with the ADR-0005 fills, score = log-odds. B2 `lightgbm_regressor`: LightGBM on U1 − U0. B3: B2 + signatures.
 
 - **Feature block**: a named group of feature columns in `configs/features.yaml` (`core` on, `extras` off by default), built by one entry of `BLOCKS` in `sepsis.features.builder`. An experiment picks blocks by name (`hand_crafted`).
 - **Feature row**: one row of `build_features` output: `patient_id, hour`, `ICULOS`, the raw view columns minus `raw.exclude`, and the enabled blocks' columns. Built from the view only.
@@ -62,6 +62,10 @@ Shared vocabulary for code, docs, tickets and prompts. If a term changes, change
 - **Eval side**: the dev patients a setup is evaluated on during development (B-dev for A → B). Not the same as the locked test part.
 - **Prediction table**: one row per patient-hour: `patient_id, hour, score` (the raw risk score, any scale), plus `alarm` (0/1) once a threshold is applied. It is what the scoring toolkit takes (ADR-0007).
 - **Out-of-fold predictions**: scores for training-side patients, each from a model that was not fitted on that patient's fold. The threshold is tuned on these only.
+- **Run folder**: `experiments/runs/<id>/` (gitignored): everything one run of an experiment config produced (configs used, thresholds, predictions, scores, metadata). Its summary is one row of `experiments/LOG.md` (ADR-0008).
+- **Feature cache**: the training and evaluation feature tables and targets of an experiment, stored as parquet under `data/cache/features/` and keyed by everything that shapes them, configs and code included.
+- **Partial run**: a run of fewer than all three setups. Its LOG row has `—` for setups not run and is never used to keep a change.
+- **Ordering diagnostic**: analysis only (M3-3). B2 is run with and without lab-count and just-revealed columns (`n_revealed_<lab>`, `revealed_now_<lab>`, taken from what the view can show) at `lab_masking_p = 0`, under A → B and B → A, to measure how much utility ordering behaviour carries. ADR-0002 forbids these columns in every model; they are in no config or feature block, and the result goes into a report, never into the LOG.
 - **Threshold grid**: the candidate thresholds for tuning: observed out-of-fold scores of the training side at evenly spaced quantiles (`configs/eval.yaml`).
 
 ## Guideline layer

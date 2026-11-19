@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import tempfile
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -189,12 +190,18 @@ def _score_in(merged: pd.DataFrame, work_dir: Path) -> Scores:
 
 
 def score_by_hospital(
-    hours: pd.DataFrame, predictions: pd.DataFrame, work_dir: Path | None = None
+    hours: pd.DataFrame,
+    predictions: pd.DataFrame,
+    work_dir: Path | None = None,
+    *,
+    jobs: int = 1,
 ) -> dict[str, Scores]:
     """Score each hospital's patients on their own (mix -> A and mix -> B).
 
     Each hospital gets one scorer call over all its patients, so its utility is normalized over
-    that hospital only. With `work_dir`, the folders go to `work_dir/<hospital>/`.
+    that hospital only. With `work_dir`, the folders go to `work_dir/<hospital>/`. With `jobs`
+    > 1 the calls run in parallel processes; the scorer and its inputs are the same, so are the
+    scores.
     """
     if hours["hospital"].isna().any():
         raise ValueError("every label row needs a hospital")
@@ -203,9 +210,13 @@ def score_by_hospital(
     stray = set(predictions["patient_id"]) - set(hours["patient_id"])
     if stray:
         raise ValueError(f"{len(stray)} predicted patients have no label rows")
-    result = {}
+    calls = {}
     for hospital, rows in hours.groupby("hospital", sort=True):
         own = predictions[predictions["patient_id"].isin(set(rows["patient_id"]))]
         sub_dir = None if work_dir is None else Path(work_dir) / str(hospital)
-        result[str(hospital)] = score(rows, own, sub_dir)
-    return result
+        calls[str(hospital)] = (rows, own, sub_dir)
+    if jobs <= 1 or len(calls) == 1:
+        return {hospital: score(*call) for hospital, call in calls.items()}
+    with ProcessPoolExecutor(max_workers=min(jobs, len(calls))) as pool:
+        futures = {hospital: pool.submit(score, *call) for hospital, call in calls.items()}
+        return {hospital: future.result() for hospital, future in futures.items()}

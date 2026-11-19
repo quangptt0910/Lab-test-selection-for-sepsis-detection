@@ -15,11 +15,12 @@ Domain vocabulary: @CONTEXT.md · Decisions: `docs/adr/` · How we work: `docs/W
   `uv run ruff check src tests; uv run ruff format --check src tests; uv run pytest -q -m "not slow"`
 - Full tests: `make test`
 - Official score: `uv run python third_party/evaluate_sepsis_score.py <labels_dir> <pred_dir> <out.psv>`. Utility is the 5th value.
-- Experiments: use the `run-experiment` skill, not ad-hoc scripts.
+- Experiments: use the `run-experiment` skill, not ad-hoc scripts. It calls
+  `uv run python -m sepsis.eval.run_experiment configs/<name>.yaml` (ADR-0008).
 
 ## Layout
 `src/sepsis/` holds `data/` (load .psv, splits), `features/` (builder, vitals, labs, clinical, signatures), `labels/` (utility targets), `risk/`, `action/`, `guideline/` (engine + `rules/*.yaml`), `replay/`, `eval/`.
-Other top-level folders: `configs/`, `experiments/`, `tests/`. The raw data in `data/training_setA/` and `data/training_setB/` is read-only.
+Other top-level folders: `configs/`, `experiments/` (`LOG.md`, and gitignored `runs/<id>/` per run), `tests/`. The raw data in `data/training_setA/` and `data/training_setB/` is read-only.
 
 ## Hard rules (breaking any one invalidates a result)
 - IMPORTANT: features at hour t may use only rows ≤ t **and** only labs the replay has revealed. Code in `features/` and `action/` must never read the full record.

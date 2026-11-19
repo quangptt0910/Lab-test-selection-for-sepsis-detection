@@ -252,6 +252,18 @@ Acceptance:
 - Batch output equals hour-by-hour output on a toy patient.
 - The time to build features for all dev patients is recorded in the issue.
 
+### M2-4 | Add clinical scores and vital window features | features test-first
+Totals and individual criterion scores side by side, plus the vital window ideas kept from team #3 (docs/research/top4-solutions.md). All off by default; M3-3 switches them on one block at a time.
+Depends on: M2-3
+Tasks:
+- Add SIRS criterion scores (temperature, heart rate, respiration, white cells), qSOFA criterion scores (respiration, systolic) and a partial NEWS2 total (no consciousness or supplemental O2).
+- Group them with `partial_sofa`, `sofa_*`, `sirs_count`, `news_*` and `qsofa_partial` as one block group for the ablation B2 + clinical scores (`b2-002`).
+- Extend `vital_window_stats` with median, 5% and 95% quantiles over 6, 12 and 24 rows.
+- Add `vital_slope`: mean change per row over 6 and 24 rows, vitals only.
+Acceptance:
+- Components are NaN exactly when their input is NaN; totals count a missing input as normal (ADR-0002).
+- The leakage suite covers every new block with no new test code, and each score has a hand-computed toy test.
+
 ## M3: Risk models B0-B2 | LOG rows for B0-B2 under all three setups (A → B, B → A, mix); B2 beats B0
 
 ### M3-1 | Build the experiment runner | eval test-first
@@ -263,7 +275,8 @@ Tasks:
 - A → B and B → A: run 5-fold CV inside the training hospital's dev part to get out-of-fold predictions and tune the threshold. Then fit on that whole dev part and score the other hospital's dev part with the frozen threshold.
 - Mix: run nested CV on A-dev + B-dev. In each outer fold, tune the threshold with an inner CV on the fold's training patients, then score the held-out fold with it. Report A and B patients separately.
 - Fit every statistic (fill values, scalers, threshold) on the training side only.
-- Save a run folder (predictions, thresholds, config, git SHA) in the gitignored `runs/`.
+- Define the risk-model interface (`fit(X, y, sample_weight)`, `predict(X)` -> raw score) and a registry the runner builds models from (ADR-0008).
+- Save a run folder (predictions, thresholds, config, git SHA) in the gitignored `experiments/runs/`.
 - Append one row to `experiments/LOG.md` with A→B, B→A, mix→A and mix→B: refuse duplicate ids, write `—` for setups not run, and print the `run-experiment` red-flag warnings.
 Acceptance:
 - A toy end-to-end run with a dummy model produces a run folder and a LOG row with all four numbers.
@@ -273,10 +286,10 @@ Acceptance:
 The three baseline risk models behind one common interface.
 Depends on: M2-3
 Tasks:
-- B0: a rule score from SIRS and PartialSOFA, with thresholds from config.
-- B1: logistic regression with fill values and scaling fitted on training folds. The docs don't define its target; suggested `SepsisLabel` with `dt` > 3 weighted 0.
+- B0: a rule score `w·sirs_count + w·partial_sofa` (weights in config, default 1 and 1). It outputs a score and gets a threshold tuned on the training side like every model, not the fixed "SIRS >= 2" rule (79% of A-dev non-septic patients reach SIRS >= 2 at some hour).
+- B1: logistic regression on `sepsis_label` (weight 0 for `dt` > 3) with fills and scaling fitted on training folds: lab normals (ADR-0005), BUN/Cr from the normals, `hours_since_<panel>` the training max, other columns the training median. Score = log-odds.
 - B2: LightGBM regressor on U1 − U0 with sample weights, NaN passed through, parameters from config.
-- One model interface the runner can use for all three.
+- Register all three in `sepsis.risk.base.MODELS` under the M3-1 interface (B2 as `lightgbm_regressor`).
 Acceptance:
 - Each model has a toy test, and fitting is reproducible with a fixed seed.
 - A test proves B1's fill values and scaler see training data only.
@@ -287,10 +300,13 @@ Depends on: M3-1, M3-2
 Explain: evaluation
 Tasks:
 - Run the B0, B1 and B2 configs under all three setups.
-- Tune B2 hyperparameters with CV on the training side only. Keep a change only if the mix result improves and A → B and B → A don't drop by more than `selection.cross_hospital_tolerance` in `configs/protocol.yaml`.
+- Tune B2 with a small grid of one-change configs (bagging on, 500 trees at learning rate 0.02, num_leaves 15, min_child_samples 500, no `hours_since_panel`), each a full 3-setup run. Keep a change only if the mean of mix → A and mix → B rises and neither A → B nor B → A drops by more than `selection.cross_hospital_tolerance` in `configs/protocol.yaml`; combine two or more kept changes into one more run. (This replaced the first wording, "tune with CV on the training side only"; the M3-3 report compares the two rules.)
 - Check feature importance (or SHAP) for anything suspicious.
 - Report the gap between the mix and cross-hospital results, and link it to the hospital differences from M0-4.
 - Compare with the published rank 1 numbers, and explain the gap (ADR-0002, no hospital C).
+- Ablation: B2 without `hours_since_panel` (it points in opposite directions in A and B).
+- Ordering-signal diagnostic (analysis only, ADR-0002, report not LOG): B2 with and without lab-count and just-revealed columns at `lab_masking_p = 0`, under A → B and B → A, to measure how much utility comes from ordering behaviour.
+- Decide `subsample_freq` (rank #1's `subsample` has no effect without it).
 Acceptance:
 - LOG rows exist for B0, B1, B2 and the tuned B2, and B2 beats B0 in all three setups (the M3 check).
 - Any red flag is investigated with `leakage-reviewer`.

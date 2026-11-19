@@ -17,7 +17,7 @@ from typing import Any
 
 import pandas as pd
 
-from sepsis.config import load_yaml
+from sepsis.config import CLEANING_CONFIG, load_yaml
 from sepsis.data.splits import (
     IncompleteCacheError,
     SplitFingerprintError,
@@ -25,7 +25,6 @@ from sepsis.data.splits import (
     load_project_split,
 )
 
-CLEANING_CONFIG = Path("configs/cleaning.yaml")
 REPORT_PATH = Path("docs/eda/data_quality.md")
 NOT_CHECKED = {"patient_id", "hospital", "hour", "ICULOS", "SepsisLabel"}
 
