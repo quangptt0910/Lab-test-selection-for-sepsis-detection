@@ -15,7 +15,9 @@ from sepsis.eval.threshold import SETUPS
 from sepsis.features.builder import with_blocks
 from sepsis.risk.base import MODELS
 
-TARGETS = ("utility_diff", "sepsis_label")
+# Experiment `target` -> the target-table column a model is trained on.
+TARGET_COLUMN = {"utility_diff": "utility_diff", "sepsis_label": "SepsisLabel"}
+TARGETS = tuple(TARGET_COLUMN)
 TOP_KEYS = {"id", "hypothesis", "seed", "split", "features", "target", "model", "note"}
 SPLIT_KEYS = {"setups"}
 FEATURE_KEYS = {"hand_crafted", "signatures", "lab_masking_p"}

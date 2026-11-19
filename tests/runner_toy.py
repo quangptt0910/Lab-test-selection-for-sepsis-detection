@@ -18,10 +18,15 @@ from sepsis.data.splits import fingerprint, write_split
 
 GRID = {"quantile_min": 0.0, "quantile_max": 1.0, "n_points": 5}
 LOG_HEADER = Path("experiments/LOG.md").read_text(encoding="utf-8")
+RED_FLAGS = yaml.safe_load(Path("configs/protocol.yaml").read_text(encoding="utf-8"))["red_flags"]
 
 
 def _record(pid: str, n: int, seed: int, septic: bool) -> pd.DataFrame:
     record = _patient(pid, n, seed, first_lab_row=0)
+    if pid.startswith("B"):
+        # Hospital B's lactate is higher than any of A's, with NaNs in both, so a statistic fitted
+        # on the wrong hospital gives a different value than one fitted on the training side.
+        record["Lactate"] += 10.0
     label = [0] * n
     if septic:
         label = [0] * (n - 8) + [1] * 8
@@ -78,7 +83,9 @@ def project(tmp_path: Path, data_dir: Path | None = None) -> dict:
         )
     )
     protocol_config = tmp_path / "protocol.yaml"
-    protocol_config.write_text(yaml.safe_dump({"split": {"fingerprint": fingerprint(table)}}))
+    protocol_config.write_text(
+        yaml.safe_dump({"split": {"fingerprint": fingerprint(table)}, "red_flags": RED_FLAGS})
+    )
     log = tmp_path / "experiments" / "LOG.md"
     log.parent.mkdir(parents=True)
     log.write_text(LOG_HEADER, encoding="utf-8")

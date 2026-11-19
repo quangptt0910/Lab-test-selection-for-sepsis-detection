@@ -7,8 +7,9 @@ load the cached model tables, run each setup (`sepsis.eval.runner`), write the r
 `experiments/runs/<id>/`, and append one row to `experiments/LOG.md`. A-test and B-test are never
 loaded: patients come only from `load_patient_hours` without `final_eval`.
 
-The run folder is written as `<id>.partial` and renamed after the LOG row is appended, so a crashed
-run leaves no LOG row and can be rerun under the same id.
+The run folder is written as `<id>.partial`, renamed to `<id>`, and only then is the LOG row
+appended (if that fails, the folder goes back to `<id>.partial`). So an id is in the LOG only when
+its run folder is complete, and a crashed run can be rerun under the same id.
 """
 
 from __future__ import annotations
@@ -29,7 +30,14 @@ from typing import Any
 
 import yaml
 
-from sepsis.config import DATA_CONFIG, EVAL_CONFIG, FEATURES_CONFIG, PROTOCOL_CONFIG, load_yaml
+from sepsis.config import (
+    CLEANING_CONFIG,
+    DATA_CONFIG,
+    EVAL_CONFIG,
+    FEATURES_CONFIG,
+    PROTOCOL_CONFIG,
+    load_yaml,
+)
 from sepsis.data.panels import PANELS_CONFIG
 from sepsis.data.splits import load_patient_hours, load_project_split
 from sepsis.eval.experiment_config import check_model_type, validate_experiment_config
@@ -40,7 +48,6 @@ from sepsis.features.builder import with_blocks
 from sepsis.labels.utility import LABELS_CONFIG, UtilityConstants
 from sepsis.risk.base import make_model
 
-CLEANING_CONFIG = Path("configs/cleaning.yaml")
 LOG_PATH = Path("experiments/LOG.md")
 RUNS_DIR = Path("experiments/runs")
 # The LOG is appended by every run, so it does not make the tree dirty for the next run.
@@ -76,6 +83,13 @@ def logged_ids(log_path: Path) -> set[str]:
         if line.startswith("|") and cells and cells[0] not in ("id", "") and set(cells[0]) != {"-"}:
             ids.add(cells[0])
     return ids
+
+
+def append_log_row(log_path: Path, row: str) -> None:
+    """Append one row to the LOG; past rows are never edited."""
+    text = Path(log_path).read_text(encoding="utf-8")
+    newline = "" if text.endswith("\n") else "\n"
+    Path(log_path).write_text(text + newline + row + "\n", encoding="utf-8")
 
 
 def _write_json(path: Path, value: Any) -> None:
@@ -146,6 +160,7 @@ def main(
 
     # 4. Run each setup.
     eval_config = load_yaml(EVAL_CONFIG)
+    limits = load_yaml(PROTOCOL_CONFIG)["red_flags"]
     grid = dict(eval_config["threshold"]["grid"] if grid is None else grid)
     model = cfg["model"]
     results = {}
@@ -175,9 +190,10 @@ def main(
         "cleaning.yaml": settings.cleaning,
         "labels.yaml": asdict(settings.labels),
         "eval_grid.yaml": grid,
+        "red_flags.yaml": limits,
     }
+    (partial / "resolved").mkdir()
     for name, value in resolved.items():
-        (partial / "resolved").mkdir(exist_ok=True)
         (partial / "resolved" / name).write_text(yaml.safe_dump(value), encoding="utf-8")
     _write_json(partial / "feature_columns.json", tables.feature_columns)
     scores = {}
@@ -210,20 +226,25 @@ def main(
         },
     )
 
-    # 6. LOG row, then the finished run folder.
+    # 6. The finished run folder, then the LOG row.
+    flags = red_flags(results, limits)
     row = log_row(
         cfg,
         Path(args.config).as_posix(),
         results,
         sha=sha,
         date=date.today().isoformat(),
+        flags=flags,
     )
-    text = log_path.read_text(encoding="utf-8")
-    log_path.write_text(text + ("" if text.endswith("\n") else "\n") + row + "\n", encoding="utf-8")
     partial.rename(run_dir)
+    try:
+        append_log_row(log_path, row)
+    except BaseException:
+        run_dir.rename(partial)  # an id is in the LOG only when its run folder is complete
+        raise
 
     print(json.dumps(scores, indent=1))
-    for flag in red_flags(results):
+    for flag in flags:
         print(flag)
     print(row)
     return 0

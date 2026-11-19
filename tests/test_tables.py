@@ -99,6 +99,9 @@ def test_cache_keys_change_with_every_input() -> None:
         cache_keys(settings(), ids, "other", source="s"),
         cache_keys(settings(), ids, "fp", source="other"),
         cache_keys(settings(panels={**settings().panels, "reveal_delay_rows": 2}), ids, "fp", "s"),
+        cache_keys(settings(cleaning={**settings().cleaning, "changed": True}), ids, "fp", "s"),
+        cache_keys(settings(features={**settings().features, "changed": True}), ids, "fp", "s"),
+        cache_keys(settings(labels=replace(settings().labels, u_fp=-0.1)), ids, "fp", "s"),
     ]
     for keys in changed:
         assert keys[0] != base[0] and keys[1] != base[1]

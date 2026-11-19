@@ -15,3 +15,10 @@ selection:
   # Keep a change only if mix improves and neither A->B nor B->A drops by more than this (utility).
   # project_assumption: fixed before the first comparison; do not change per experiment.
   cross_hospital_tolerance: 0.01
+
+red_flags:
+  # run-experiment warnings (ADR-0008): stop and suspect leakage when one fires.
+  # project_assumption: fixed before the first comparison; do not change per experiment.
+  max_auroc: 0.95               # any of A->B, B->A, mix->A, mix->B above this
+  max_direction_gap: 0.15       # |A->B utility - B->A utility| above this
+  max_utility_jump: 0.05        # utility change from one small change (checked by the skill against earlier LOG rows)

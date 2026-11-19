@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-from runner_toy import GRID, experiment, patients, project, records
+from runner_toy import GRID, RED_FLAGS, experiment, patients, project, records
 from test_tables import settings
 
 import sepsis.data.load as load_module
@@ -27,6 +27,7 @@ from sepsis.eval.threshold import training_side_patients
 from sepsis.risk.base import MODELS, DummyModel
 
 SPLIT = patients()
+REAL_APPEND = cli.append_log_row
 DEV = SPLIT[SPLIT["split"] == "dev"]
 TEST_IDS = set(SPLIT.loc[SPLIT["split"] == "test", "patient_id"])
 CLEAN = lambda: ("abc1234", False)  # noqa: E731  (an injected git check: clean tree)
@@ -59,14 +60,14 @@ class Spy(DummyModel):
         return super().predict(X)
 
 
-def _run(tables, labels, setup, target="utility_diff"):
+def _run(tables, labels, setup, target="utility_diff", column="partial_sofa"):
     Spy.log = []
     result = run_setup(
         tables,
         labels,
         SPLIT,
         setup,
-        new_model=lambda: Spy("partial_sofa"),
+        new_model=lambda: Spy(column),
         target=target,
         grid=GRID,
     )
@@ -116,6 +117,60 @@ def test_models_fit_only_on_the_training_side_and_never_predict_their_own_patien
         assert model.fill_ == np.nanmin(tables.train_X.loc[model.fit_index, "partial_sofa"])
 
 
+@pytest.mark.parametrize("setup", ["A_to_B", "B_to_A"])
+def test_a_fitted_statistic_comes_from_the_training_hospital(tables, labels, setup) -> None:
+    # Toy lactate: every B value is above every A value, and both have NaNs.
+    _, models = _run(tables, labels, setup, column="Lactate")
+    hospital = tables.targets["patient_id"].str[0]
+    lactate = tables.train_X["Lactate"]
+    train, other = setup[0], setup[-1]
+    train_min = np.nanmin(lactate[hospital == train])
+    other_min = np.nanmin(tables.eval_X["Lactate"][hospital == other])
+    assert train_min != other_min
+    refit = models[-1]
+    assert refit.fill_ == train_min
+    # The scored rows with no lactate get the training-side fill, not the evaluated hospital's.
+    missing = tables.eval_X.loc[refit.predict_index, "Lactate"].isna().to_numpy()
+    assert missing.any()
+    np.testing.assert_array_equal(refit.predict(refit.predict_X)[missing], train_min)
+
+
+@pytest.mark.parametrize("setup", ["A_to_B", "mix"])
+def test_thresholds_are_tuned_on_out_of_fold_rows_only(tables, labels, setup, monkeypatch) -> None:
+    calls = []
+    real = runner_module.tune_threshold
+
+    def spy(hours, oof, split, setup_, *, outer_fold=None, grid):
+        calls.append((outer_fold, set(hours["patient_id"]), oof.copy()))
+        return real(hours, oof, split, setup_, outer_fold=outer_fold, grid=grid)
+
+    monkeypatch.setattr(runner_module, "tune_threshold", spy)
+    result, models = _run(tables, labels, setup)
+    plans = plan_setup(SPLIT, setup)
+    assert len(calls) == len(plans)
+    pid = tables.targets["patient_id"]
+    per_plan = len(plans[0].inner) + 1
+    for i, (plan, (outer_fold, label_ids, oof)) in enumerate(zip(plans, calls, strict=True)):
+        oof_ids = set().union(*(set(ids) for _, _, ids in plan.inner))
+        assert outer_fold == plan.outer_fold
+        assert label_ids == oof_ids == set(oof["patient_id"])
+        assert not oof_ids & set(plan.scored)
+        # The scores are exactly the inner models' out-of-fold predictions, never the refit's.
+        inner = models[i * per_plan : (i + 1) * per_plan - 1]
+        expected = pd.concat(
+            [
+                tables.targets.loc[m.predict_index, KEYS].assign(score=m.predict(m.predict_X))
+                for m in inner
+            ]
+        )
+        pd.testing.assert_frame_equal(
+            oof[[*KEYS, "score"]].sort_values(KEYS).reset_index(drop=True),
+            expected.sort_values(KEYS).reset_index(drop=True),
+            check_dtype=False,
+        )
+        assert set(pid[models[(i + 1) * per_plan - 1].predict_index]) == set(plan.scored)
+
+
 def test_fits_use_the_training_view_and_predictions_the_evaluation_view(tables, labels) -> None:
     _, models = _run(tables, labels, "B_to_A")
     columns = tables.feature_columns
@@ -160,7 +215,7 @@ CFG = {"id": "x-1", "note": "a|b"}
 
 def test_log_row_for_a_full_run() -> None:
     results = {s: _result(s, 0.3) for s in ("A_to_B", "B_to_A", "mix")}
-    row = log_row(CFG, "configs/x.yaml", results, sha="abc", date="2026-11-19")
+    row = log_row(CFG, "configs/x.yaml", results, sha="abc", date="2026-11-19", flags=[])
     assert row == (
         "| x-1 | 2026-11-19 | abc | configs/x.yaml | dev | 0.300 | 0.300 | 0.300 | 0.300 "
         "| 0.800 | — | a\\|b |"
@@ -169,7 +224,8 @@ def test_log_row_for_a_full_run() -> None:
 
 def test_log_row_for_a_partial_run_with_red_flags() -> None:
     results = {"mix": _result("mix", 0.2), "B_to_A": _result("B_to_A", 0.4, auroc=0.97)}
-    row = log_row({"id": "x-2", "note": ""}, "c.yaml", results, sha="s", date="d")
+    flags = red_flags(results, RED_FLAGS)
+    row = log_row({"id": "x-2", "note": ""}, "c.yaml", results, sha="s", date="d", flags=flags)
     cells = [c.strip() for c in row.strip("|").split("|")]
     assert cells[5:9] == ["—", "0.400", "0.200", "0.200"]
     assert cells[9] == "0.857 (3 of 4)"
@@ -180,7 +236,7 @@ def test_log_row_for_a_partial_run_with_red_flags() -> None:
 
 def test_red_flag_when_the_two_directions_differ() -> None:
     results = {"A_to_B": _result("A_to_B", 0.05), "B_to_A": _result("B_to_A", 0.3)}
-    assert any("differ by more than 0.15" in f for f in red_flags(results))
+    assert any("differ by more than 0.15" in f for f in red_flags(results, RED_FLAGS))
 
 
 # --- The CLI end to end ---------------------------------------------------------------------------
@@ -311,6 +367,30 @@ def test_a_crashed_run_writes_no_log_row_and_can_be_rerun(toy: dict, monkeypatch
     monkeypatch.setattr(cli, "run_setup", real)
     assert _main(toy, config) == 0
     assert "toy-001" in logged_ids(toy["root"] / "experiments" / "LOG.md")
+
+
+def test_a_run_that_fails_after_writing_its_folder_can_be_rerun(toy: dict, monkeypatch) -> None:
+    config = experiment(toy["root"], split={"setups": ["A_to_B"]})
+    runs = toy["root"] / "experiments" / "runs"
+    log = toy["root"] / "experiments" / "LOG.md"
+
+    def fail(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(cli, "append_log_row", fail)
+    with pytest.raises(OSError, match="disk full"):
+        _main(toy, config)
+    # The finished folder went back to .partial, so the id is neither logged nor finished.
+    assert "toy-001" not in logged_ids(log)
+    assert not (runs / "toy-001").exists()
+    assert (runs / "toy-001.partial" / "scores.json").exists()
+    (runs / "toy-001.partial" / "stale.txt").write_text("from the failed run")
+
+    monkeypatch.setattr(cli, "append_log_row", REAL_APPEND)
+    assert _main(toy, config) == 0
+    assert "toy-001" in logged_ids(log)
+    assert not (runs / "toy-001.partial").exists()
+    assert not (runs / "toy-001" / "stale.txt").exists()  # the stale .partial was replaced
 
 
 def test_an_unregistered_model_is_refused_before_any_work(toy: dict, monkeypatch) -> None:

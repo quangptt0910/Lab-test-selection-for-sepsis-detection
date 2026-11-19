@@ -24,8 +24,8 @@ Your job is the checks around it and the judgment after it. Never run experiment
 4. **Compare** with the best previous row of the same kind, on all four columns. Say plainly whether the hypothesis held. A change is kept only if mix improves without A→B or B→A dropping by more than `selection.cross_hospital_tolerance` in `configs/protocol.yaml`, and never on a partial run. Report the gap between mix and cross-hospital results.
 5. **Report** to the user: the command run, the scores it printed, and the new LOG row. No metric without its command output.
 
-Red flags. Stop and suspect leakage, then ask the leakage-reviewer subagent. The runner writes the first three into the LOG note; the fourth needs your comparison:
-- AUROC above 0.95 in any setup.
-- A→B and B→A differ by more than 0.15.
+Red flags. Stop and suspect leakage, then ask the leakage-reviewer subagent. The limits are in the `red_flags` section of `configs/protocol.yaml`. The runner writes the first three into the LOG note; the fourth needs your comparison:
+- AUROC above `max_auroc` (0.95) in any setup.
+- A→B and B→A differ by more than `max_direction_gap` (0.15).
 - A cross-hospital result beats the mix result for the same evaluated hospital (A→B above mix→B, or B→A above mix→A). Mix trains on that hospital, so it should be the easier setting; this points to a bug.
-- Utility jumps by more than 0.05 from one small change.
+- Utility jumps by more than `max_utility_jump` (0.05) from one small change.

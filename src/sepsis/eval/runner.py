@@ -20,19 +20,19 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
 from sepsis.data.splits import cross_hospital, mix_folds
+from sepsis.eval.experiment_config import TARGET_COLUMN
 from sepsis.eval.scorer import Scores, apply_threshold, score, score_by_hospital
 from sepsis.eval.tables import KEYS, Tables
 from sepsis.eval.threshold import SETUPS, tune_threshold
 from sepsis.risk.base import RiskModel
 
-TARGET_COLUMN = {"utility_diff": "utility_diff", "sepsis_label": "SepsisLabel"}
 # LOG columns, in order: (setup, hospital scored). None: the setup's single score.
 RESULTS = (("A_to_B", None), ("B_to_A", None), ("mix", "A"), ("mix", "B"))
 RESULT_NAMES = ("A→B", "B→A", "mix→A", "mix→B")
@@ -52,14 +52,15 @@ class FoldPlan:
 
 @dataclass
 class SetupResult:
+    """Everything one setup produced; the CLI writes it to `experiments/runs/<id>/<setup>/`."""
+
     setup: str
     scores: dict[str, Scores]  # "all" for A_to_B / B_to_A; "A" and "B" for mix
-    thresholds: list[dict]
-    curves: pd.DataFrame
-    predictions: pd.DataFrame
-    folds: pd.DataFrame
+    thresholds: list[dict[str, Any]]  # one per plan: outer_fold, threshold, tuning_utility
+    curves: pd.DataFrame  # threshold -> tuning utility, per plan
+    predictions: pd.DataFrame  # KEYS, kind (oof|scored), outer_fold, inner_fold, score, alarm
+    folds: pd.DataFrame  # one row per model: patients, rows, fit and predict seconds
     seconds: float = 0.0
-    extra: dict = field(default_factory=dict)
 
 
 def _ids(table: pd.DataFrame) -> tuple[str, ...]:
@@ -127,7 +128,9 @@ def run_setup(
             raise ValueError("a planned patient has no rows in the tables")
         return np.isin(pid, codes)
 
-    def fit_predict(fit_ids, predict_ids, fold_row: dict) -> pd.DataFrame:
+    def fit_predict(
+        fit_ids: Sequence[str], predict_ids: Sequence[str], fold_row: dict[str, Any]
+    ) -> pd.DataFrame:
         fit_rows, predict_rows = rows(fit_ids), rows(predict_ids)
         t0 = time.perf_counter()
         model = new_model().fit(X_train[fit_rows], y[fit_rows], weight[fit_rows])
@@ -211,16 +214,20 @@ def four_scores(results: Mapping[str, SetupResult]) -> dict[str, Scores | None]:
     return out
 
 
-def red_flags(results: Mapping[str, SetupResult]) -> list[str]:
-    """The `run-experiment` red flags that need no earlier run (printed and written to the note)."""
+def red_flags(results: Mapping[str, SetupResult], limits: Mapping[str, float]) -> list[str]:
+    """The `run-experiment` red flags that need no earlier run (printed and written to the note).
+
+    `limits` is the `red_flags` section of configs/protocol.yaml.
+    """
     s = four_scores(results)
+    max_auroc, max_gap = limits["max_auroc"], limits["max_direction_gap"]
     flags = [
-        f"red flag: {name} AUROC {v.auroc:.3f} > 0.95"
+        f"red flag: {name} AUROC {v.auroc:.3f} > {max_auroc}"
         for name, v in s.items()
-        if v and v.auroc > 0.95
+        if v and v.auroc > max_auroc
     ]
-    if s["A→B"] and s["B→A"] and abs(s["A→B"].utility - s["B→A"].utility) > 0.15:
-        flags.append("red flag: A→B and B→A utility differ by more than 0.15")
+    if s["A→B"] and s["B→A"] and abs(s["A→B"].utility - s["B→A"].utility) > max_gap:
+        flags.append(f"red flag: A→B and B→A utility differ by more than {max_gap}")
     for cross, mix in (("A→B", "mix→B"), ("B→A", "mix→A")):
         if s[cross] and s[mix] and s[cross].utility > s[mix].utility:
             flags.append(f"red flag: {cross} utility beats {mix} (mix trains on that hospital)")
@@ -238,8 +245,9 @@ def log_row(
     *,
     sha: str,
     date: str,
+    flags: Sequence[str],
 ) -> str:
-    """One `experiments/LOG.md` row (header in that file)."""
+    """One `experiments/LOG.md` row (header in that file); `flags` from `red_flags`."""
     s = four_scores(results)
     run = [v for v in s.values() if v is not None]
     utilities = [("—" if v is None else f"{v.utility:.3f}") for v in s.values()]
@@ -249,6 +257,6 @@ def log_row(
         auroc += f" ({len(run)} of {len(s)})"
     note = [cfg["note"]] if cfg["note"] else []
     note += [PARTIAL_NOTE] if partial else []
-    note += red_flags(results)
+    note += list(flags)
     cells = [cfg["id"], date, sha, config_path, "dev", *utilities, auroc, "—", "; ".join(note)]
     return "| " + " | ".join(_cell(c) for c in cells) + " |"
