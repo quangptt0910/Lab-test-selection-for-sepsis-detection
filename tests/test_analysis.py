@@ -38,6 +38,17 @@ def test_ordering_columns_show_only_what_the_view_can_show() -> None:
     assert cols["n_revealed_Lactate"].tolist() == [0, 1, 1, 2, 2]
 
 
+def test_ordering_counts_restart_for_each_patient() -> None:
+    nan = np.nan
+    first = _record([2.0, 3.0, nan])
+    second = _record([nan, 4.0, nan, nan]).assign(patient_id="A_2")
+    shuffled = pd.concat([second, first]).sample(frac=1, random_state=0)
+    cols = ordering_columns(shuffled, CLEANING, PANELS).set_index(["patient_id", "hour"])
+    assert cols.loc["A_1", "n_revealed_Lactate"].tolist() == [0, 1, 2]
+    assert cols.loc["A_2", "n_revealed_Lactate"].tolist() == [0, 0, 1, 1]
+    assert cols.loc["A_2", "revealed_now_Lactate"].tolist() == [0, 0, 1, 0]
+
+
 def test_ordering_columns_never_use_later_rows() -> None:
     nan = np.nan
     base = ordering_columns(_record([2.0, nan, 3.0, nan, nan]), CLEANING, PANELS)
