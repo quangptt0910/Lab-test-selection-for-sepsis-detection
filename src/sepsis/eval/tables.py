@@ -165,6 +165,20 @@ def _write(directory: Path, frames: Mapping[str, pd.DataFrame], extra: Mapping[s
     tmp.rename(directory)
 
 
+def read_cached(cache_dir: Path, info: Mapping[str, Any]) -> Tables:
+    """The cached tables under `info["train_key"]` and `info["eval_key"]`, checked."""
+    train_dir, eval_dir = Path(cache_dir) / info["train_key"], Path(cache_dir) / info["eval_key"]
+    meta = json.loads((eval_dir / "meta.json").read_text(encoding="utf-8"))
+    tables = Tables(
+        train_X=pd.read_parquet(train_dir / "train_X.parquet"),
+        eval_X=pd.read_parquet(eval_dir / "eval_X.parquet"),
+        targets=pd.read_parquet(eval_dir / "targets.parquet"),
+        feature_columns=list(meta["feature_columns"]),
+    )
+    check_tables(tables)
+    return tables
+
+
 def load_or_build(
     hours: pd.DataFrame,
     settings: TableSettings,
@@ -182,16 +196,9 @@ def load_or_build(
     if cache_dir is not None:
         train_dir, eval_dir = Path(cache_dir) / train_key, Path(cache_dir) / eval_key
         if (train_dir / "meta.json").exists() and (eval_dir / "meta.json").exists():
-            meta = json.loads((eval_dir / "meta.json").read_text(encoding="utf-8"))
-            tables = Tables(
-                train_X=pd.read_parquet(train_dir / "train_X.parquet"),
-                eval_X=pd.read_parquet(eval_dir / "eval_X.parquet"),
-                targets=pd.read_parquet(eval_dir / "targets.parquet"),
-                feature_columns=list(meta["feature_columns"]),
-            )
+            tables = read_cached(cache_dir, info)
             expected = hours[KEYS].sort_values(KEYS, kind="stable").reset_index(drop=True)
             _check_keys(expected, tables.targets, "cached tables")
-            check_tables(tables)
             return tables, {**info, "hit": True}
     tables = build_tables(hours, settings)
     if cache_dir is not None:

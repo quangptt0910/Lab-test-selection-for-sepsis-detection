@@ -300,7 +300,7 @@ Depends on: M3-1, M3-2
 Explain: evaluation
 Tasks:
 - Run the B0, B1 and B2 configs under all three setups.
-- Tune B2 with a small grid of one-change configs (bagging on, 500 trees at learning rate 0.02, num_leaves 15, min_child_samples 500, no `hours_since_panel`), each a full 3-setup run. Keep a change only if the mean of mix → A and mix → B rises and neither A → B nor B → A drops by more than `selection.cross_hospital_tolerance` in `configs/protocol.yaml`; combine two or more kept changes into one more run.
+- Tune B2 with a small grid of one-change configs (bagging on, 500 trees at learning rate 0.02, num_leaves 15, min_child_samples 500, no `hours_since_panel`), each a full 3-setup run. Keep a change only if the mean of mix → A and mix → B rises and neither A → B nor B → A drops by more than `selection.cross_hospital_tolerance` in `configs/protocol.yaml`; combine two or more kept changes into one more run. (This replaced the first wording, "tune with CV on the training side only"; the M3-3 report compares the two rules.)
 - Check feature importance (or SHAP) for anything suspicious.
 - Report the gap between the mix and cross-hospital results, and link it to the hospital differences from M0-4.
 - Compare with the published rank 1 numbers, and explain the gap (ADR-0002, no hospital C).

@@ -19,8 +19,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from sepsis.eval.refit import CROSS_HOSPITAL, Refit, check_against_run, load_run
-from sepsis.eval.refit import refit_cross_hospital as refit
+from sepsis.eval.refit import (
+    CROSS_HOSPITAL,
+    Refit,
+    check_against_run,
+    load_run,
+    refit_cross_hospital,
+)
 from sepsis.risk.gbm import LightGBMRegressor
 
 SHAP_ROWS = 50_000
@@ -40,7 +45,7 @@ def shap_importance(refitted: Refit, *, max_rows: int = SHAP_ROWS, seed: int = 0
     """`feature, gain, mean_abs_shap, direction, rank` for one refitted LightGBM model."""
     if not isinstance(refitted.model, LightGBMRegressor):
         raise ValueError("importance needs a lightgbm_regressor run")
-    booster = refitted.model.model_.booster_
+    booster = refitted.model.booster
     X = refitted.X_eval
     if len(X) > max_rows:
         X = X.sample(n=max_rows, random_state=seed)
@@ -92,10 +97,10 @@ def main(argv: list[str] | None = None) -> int:
     cfg, preprocessing = load_run(args.run_dir)
     if cfg["model"]["type"] != "lightgbm_regressor":
         raise ValueError("importance needs a lightgbm_regressor run")
-    tables, _, split, _, _ = load_dev_tables(cfg)
+    dev = load_dev_tables(cfg)
     by_setup = {}
     for setup in CROSS_HOSPITAL:
-        refitted = refit(cfg, preprocessing, tables, split, setup)
+        refitted = refit_cross_hospital(cfg, preprocessing, dev.tables, dev.split, setup)
         check_against_run(refitted, args.run_dir)
         by_setup[setup] = shap_importance(refitted, seed=int(cfg["seed"]))
     out = pd.concat([t.assign(setup=s) for s, t in by_setup.items()], ignore_index=True)

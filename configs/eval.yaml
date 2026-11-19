@@ -6,6 +6,13 @@ scorer:
   # SHA-256 of the file with line endings normalised to LF. The loader refuses a file that differs.
   sha256: 26b8b26267ed32e8b7a7a27e45201cfc8c6640e717ba4cdc1f452b32f12b99e5
 
+parallel:
+  # Speed only (results are identical to a serial run). The official scorer takes ~2 min per
+  # call, so a run spends most of its time scoring.
+  setup_jobs: 3   # setups (A_to_B, B_to_A, mix) in parallel processes; each reads the cached
+                  # tables (~1.5 GB of memory). --jobs on the CLI overrides it; 1 runs them in turn.
+  score_jobs: 2   # mix -> A and mix -> B scored at the same time
+
 threshold:
   # Candidate thresholds are observed out-of-fold scores of the training side, taken at evenly
   # spaced quantiles, so one grid works for B0 (rule counts), B1 (probabilities) and B2 (U1 - U0).

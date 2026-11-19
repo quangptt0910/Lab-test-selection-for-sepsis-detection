@@ -22,7 +22,8 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import asdict
+from concurrent.futures import ProcessPoolExecutor
+from dataclasses import asdict, dataclass
 from datetime import date
 from importlib.metadata import version
 from pathlib import Path
@@ -41,13 +42,16 @@ from sepsis.config import (
 )
 from sepsis.data.panels import PANELS_CONFIG, PREPROCESSING_CONFIG
 from sepsis.data.splits import load_patient_hours, load_project_split
-from sepsis.eval.experiment_config import check_model_type, validate_experiment_config
-from sepsis.eval.runner import log_row, red_flags, run_setup
+from sepsis.eval.experiment_config import (
+    check_model_type,
+    model_factory,
+    validate_experiment_config,
+)
+from sepsis.eval.runner import SetupResult, log_row, red_flags, run_setup
 from sepsis.eval.scorer import scorer_sha256
-from sepsis.eval.tables import KEYS, Tables, TableSettings, load_or_build
+from sepsis.eval.tables import KEYS, Tables, TableSettings, load_or_build, read_cached
 from sepsis.features.builder import with_blocks
 from sepsis.labels.utility import LABELS_CONFIG, UtilityConstants
-from sepsis.risk.base import make_model
 
 LOG_PATH = Path("experiments/LOG.md")
 RUNS_DIR = Path("experiments/runs")
@@ -86,19 +90,34 @@ def logged_ids(log_path: Path) -> set[str]:
     return ids
 
 
+@dataclass(frozen=True)
+class DevData:
+    """The dev patients of one experiment: patient-hours, split and model tables, aligned."""
+
+    tables: Tables
+    hours: pd.DataFrame  # every dev patient-hour, sorted by KEYS (the tables' row order)
+    split: pd.DataFrame
+    cache: dict[str, Any]  # train_key, eval_key, hit
+    cache_dir: Path | None
+    settings: TableSettings
+
+    @property
+    def labels(self) -> pd.DataFrame:
+        """`patient_id, hour, hospital, SepsisLabel`, aligned with the tables."""
+        return self.hours[[*KEYS, "hospital", "SepsisLabel"]]
+
+
 def load_dev_tables(
     cfg: Mapping[str, Any], *, no_cache: bool = False, lab_masking_p: float | None = None
-) -> tuple[Tables, pd.DataFrame, pd.DataFrame, dict, TableSettings]:
+) -> DevData:
     """Dev patients only (ADR-0004), then the model tables of `cfg` (cached unless `no_cache`).
 
-    Returns `(tables, labels, split, cache_info, settings)`; `labels` are the patient-hour rows
-    (`patient_id, hour, hospital, SepsisLabel`) aligned with the tables. `lab_masking_p`
-    overrides the config's value (the ordering diagnostic's full-information setting).
+    `lab_masking_p` overrides the config's value (the ordering diagnostic's full-information
+    setting).
     """
     split = load_project_split()
     hours = load_patient_hours(["A", "B"], split["patient_id"])
     hours = hours.sort_values(KEYS, kind="stable").reset_index(drop=True)
-    labels = hours[[*KEYS, "hospital", "SepsisLabel"]]
     masking = cfg["features"]["lab_masking_p"] if lab_masking_p is None else lab_masking_p
     settings = TableSettings(
         blocks=tuple(cfg["features"]["hand_crafted"]),
@@ -114,7 +133,38 @@ def load_dev_tables(
     tables, cache = load_or_build(
         hours, settings, split_fingerprint=fingerprint, cache_dir=cache_dir
     )
-    return tables, labels, split, cache, settings
+    return DevData(tables, hours, split, cache, cache_dir, settings)
+
+
+@dataclass(frozen=True)
+class SetupJob:
+    """One setup for a worker process: everything but the tables, which it reads from the cache
+    by key (the same files the parent just checked), so no table is copied between processes."""
+
+    setup: str
+    cfg: Mapping[str, Any]
+    preprocessing: Mapping[str, Any]
+    labels: pd.DataFrame
+    split: pd.DataFrame
+    cache_dir: Path
+    cache: Mapping[str, Any]
+    grid: Mapping[str, float]
+    score_jobs: int
+
+
+def run_setup_job(job: SetupJob) -> SetupResult:
+    """Worker entry point: the same `run_setup` call the serial path makes."""
+    print(f"[{job.cfg['id']}] {job.setup} ...", flush=True)
+    return run_setup(
+        read_cached(job.cache_dir, job.cache),
+        job.labels,
+        job.split,
+        job.setup,
+        new_model=model_factory(job.cfg, job.preprocessing),
+        target=job.cfg["target"],
+        grid=job.grid,
+        score_jobs=job.score_jobs,
+    )
 
 
 def append_log_row(log_path: Path, row: str) -> None:
@@ -150,6 +200,13 @@ def main(
     parser.add_argument("config", type=Path)
     parser.add_argument("--allow-dirty", action="store_true", help="run on a dirty tree (-dirty)")
     parser.add_argument("--no-cache", action="store_true", help="rebuild the model tables")
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=None,
+        help="setups run in parallel processes (default: parallel.setup_jobs in configs/eval.yaml;"
+        " 1 runs them in this process)",
+    )
     args = parser.parse_args(argv)
     started = time.perf_counter()
     root = Path(root)
@@ -170,28 +227,47 @@ def main(
 
     # 2. Dev patients only (ADR-0004): the split and patient-hours never include test patients.
     # 3. Model tables, built once for all dev patients (cached unless --no-cache).
-    tables, labels, split, cache, settings = load_dev_tables(cfg, no_cache=args.no_cache)
+    dev = load_dev_tables(cfg, no_cache=args.no_cache)
+    tables, settings = dev.tables, dev.settings
 
     # 4. Run each setup.
     eval_config = load_yaml(EVAL_CONFIG)
     limits = load_yaml(PROTOCOL_CONFIG)["red_flags"]
     preprocessing = load_yaml(PREPROCESSING_CONFIG)["b1"]  # B1's fills and log labs (ADR-0005)
     grid = dict(eval_config["threshold"]["grid"] if grid is None else grid)
-    model = cfg["model"]
+    parallel = eval_config["parallel"]
+    jobs = int(parallel["setup_jobs"] if args.jobs is None else args.jobs)
+    setups = list(cfg["split"]["setups"])
     results = {}
-    for setup in cfg["split"]["setups"]:
-        print(f"[{cfg['id']}] {setup} ...", flush=True)
-        results[setup] = run_setup(
-            tables,
-            labels,
-            split,
-            setup,
-            new_model=lambda: make_model(
-                model["type"], model["params"], int(cfg["seed"]), preprocessing=preprocessing
-            ),
-            target=cfg["target"],
+    if jobs > 1 and len(setups) > 1 and dev.cache_dir is not None:
+        # Speed only: each worker makes the serial path's run_setup call on the same cached
+        # tables, so the results are the same (tests/test_runner.py checks this).
+        common = dict(
+            cfg=cfg,
+            preprocessing=preprocessing,
+            labels=dev.labels,
+            split=dev.split,
+            cache_dir=dev.cache_dir,
+            cache=dev.cache,
             grid=grid,
+            score_jobs=int(parallel["score_jobs"]),
         )
+        with ProcessPoolExecutor(max_workers=min(jobs, len(setups))) as pool:
+            futures = {s: pool.submit(run_setup_job, SetupJob(setup=s, **common)) for s in setups}
+            results = {s: future.result() for s, future in futures.items()}
+    else:
+        for setup in setups:
+            print(f"[{cfg['id']}] {setup} ...", flush=True)
+            results[setup] = run_setup(
+                tables,
+                dev.labels,
+                dev.split,
+                setup,
+                new_model=model_factory(cfg, preprocessing),
+                target=cfg["target"],
+                grid=grid,
+                score_jobs=int(parallel["score_jobs"]),
+            )
 
     # 5. Run folder, written as <id>.partial.
     partial = run_dir.with_name(run_dir.name + ".partial")
@@ -236,7 +312,8 @@ def main(
             "command": " ".join([Path(sys.argv[0]).name, *(argv or sys.argv[1:])]),
             "config": str(args.config),
             "seed": cfg["seed"],
-            "cache": cache,
+            "cache": dev.cache,
+            "setup_jobs": jobs,
             "scorer_sha256": scorer_sha256(Path(eval_config["scorer"]["path"])),
             "versions": _versions(),
             "setup_seconds": {s: r.seconds for s, r in results.items()},

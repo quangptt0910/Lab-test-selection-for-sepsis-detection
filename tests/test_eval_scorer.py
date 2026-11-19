@@ -261,3 +261,10 @@ def test_all_zero_scores_zero_on_a_dev() -> None:
     print(f"tuned on {table['patient_id'].nunique()} patients, {len(result.curve)} thresholds, "
           f"{time.perf_counter() - start:.1f} s")  # fmt: skip
     assert np.isfinite(result.threshold)
+
+
+def test_score_by_hospital_in_parallel_equals_serial() -> None:
+    table = hours()
+    inside = in_best_window(table)
+    preds = predictions(table, np.where(inside, 0.9, 0.1), inside.astype(int).to_numpy())
+    assert score_by_hospital(table, preds, jobs=2) == score_by_hospital(table, preds)

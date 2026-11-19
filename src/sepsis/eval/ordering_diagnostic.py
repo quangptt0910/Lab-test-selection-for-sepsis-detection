@@ -31,10 +31,10 @@ import pandas as pd
 
 from sepsis.data.clean import clean
 from sepsis.data.view import evaluation_reveal_rows
+from sepsis.eval.refit import CROSS_HOSPITAL
 from sepsis.eval.tables import KEYS, Tables
 
 PREFIXES = ("n_revealed_", "revealed_now_")
-SETUPS = ("A_to_B", "B_to_A")
 
 
 def ordering_columns(
@@ -72,32 +72,24 @@ def with_ordering(tables: Tables, columns: pd.DataFrame) -> Tables:
 
 def main(argv: list[str] | None = None) -> int:
     from sepsis.config import EVAL_CONFIG, load_yaml
-    from sepsis.data.splits import load_patient_hours
+    from sepsis.eval.experiment_config import model_factory
     from sepsis.eval.refit import load_run
     from sepsis.eval.run_experiment import load_dev_tables
     from sepsis.eval.runner import run_setup
-    from sepsis.risk.base import make_model
 
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("run_dir", type=Path)
     args = parser.parse_args(argv)
     cfg, preprocessing = load_run(args.run_dir)
-    tables, labels, split, _, settings = load_dev_tables(cfg, lab_masking_p=0.0)
-    hours = load_patient_hours(["A", "B"], split["patient_id"])
-    columns = ordering_columns(
-        hours.sort_values(KEYS, kind="stable"), settings.cleaning, settings.panels
-    )
+    dev = load_dev_tables(cfg, lab_masking_p=0.0)
+    tables, labels, split = dev.tables, dev.labels, dev.split
+    columns = ordering_columns(dev.hours, dev.settings.cleaning, dev.settings.panels)
     grid = load_yaml(EVAL_CONFIG)["threshold"]["grid"]
-    model = cfg["model"]
-
-    def new_model():
-        return make_model(
-            model["type"], model["params"], int(cfg["seed"]), preprocessing=preprocessing
-        )
+    new_model = model_factory(cfg, preprocessing)
 
     results: dict[str, dict[str, dict[str, float]]] = {}
     for name, variant in (("without", tables), ("with_ordering", with_ordering(tables, columns))):
-        for setup in SETUPS:
+        for setup in CROSS_HOSPITAL:
             print(f"[ordering] {name} {setup} ...", flush=True)
             result = run_setup(
                 variant, labels, split, setup, new_model=new_model, target=cfg["target"], grid=grid

@@ -8,12 +8,12 @@ experiment setting: it comes from `configs/eval.yaml`, the same for every experi
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from sepsis.eval.threshold import SETUPS
 from sepsis.features.builder import with_blocks
-from sepsis.risk.base import MODEL_TARGETS, MODELS
+from sepsis.risk.base import MODEL_TARGETS, MODELS, RiskModel, make_model
 
 # Experiment `target` -> the target-table column a model is trained on.
 TARGET_COLUMN = {"utility_diff": "utility_diff", "sepsis_label": "SepsisLabel"}
@@ -102,3 +102,16 @@ def check_model_type(cfg: Mapping[str, Any], models: Mapping[str, Any] = MODELS)
         raise ExperimentConfigError(
             f"{model_type} needs target in {targets}, not {cfg['target']!r}"
         )
+
+
+def model_factory(
+    cfg: Mapping[str, Any], preprocessing: Mapping[str, Any] | None
+) -> Callable[[], RiskModel]:
+    """`new_model()` for a checked config: its model type, params and seed, plus B1's
+    preprocessing (ADR-0005). Shared by the CLI, its parallel workers and the analyses."""
+    model, seed = cfg["model"], int(cfg["seed"])
+
+    def new_model() -> RiskModel:
+        return make_model(model["type"], model["params"], seed, preprocessing=preprocessing)
+
+    return new_model

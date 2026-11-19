@@ -1,7 +1,7 @@
 """Refit the scored model of a finished A_to_B / B_to_A run, for analysis (M3-3).
 
 No models are saved (ADR-0008), so an analysis refits: the config, seed, preprocessing and
-training rows of the run, through the same `plan_setup` and `patient_rows` as the runner. The
+training rows of the run, through the same `plan_setup` and `PatientIndex` as the runner. The
 refit's scores must equal the run's scored predictions, or `check_against_run` raises: an analysis
 of a different model would be worthless.
 """
@@ -17,10 +17,14 @@ import numpy as np
 import pandas as pd
 
 from sepsis.config import FEATURES_CONFIG, load_yaml
-from sepsis.eval.experiment_config import TARGET_COLUMN, validate_experiment_config
-from sepsis.eval.runner import patient_rows, plan_setup
+from sepsis.eval.experiment_config import (
+    TARGET_COLUMN,
+    model_factory,
+    validate_experiment_config,
+)
+from sepsis.eval.runner import PatientIndex, plan_setup
 from sepsis.eval.tables import KEYS, Tables
-from sepsis.risk.base import RiskModel, make_model
+from sepsis.risk.base import RiskModel
 
 CROSS_HOSPITAL = ("A_to_B", "B_to_A")
 
@@ -55,11 +59,9 @@ def refit_cross_hospital(
     if setup not in CROSS_HOSPITAL:
         raise ValueError(f"setup must be one of {CROSS_HOSPITAL}")
     plan = plan_setup(split, setup)[0]
-    fit_rows, scored_rows = patient_rows(tables, plan.refit), patient_rows(tables, plan.scored)
-    model_cfg = cfg["model"]
-    model = make_model(
-        model_cfg["type"], model_cfg["params"], int(cfg["seed"]), preprocessing=preprocessing
-    )
+    index = PatientIndex.of(tables)
+    fit_rows, scored_rows = index.rows(plan.refit), index.rows(plan.scored)
+    model = model_factory(cfg, preprocessing)()
     targets = tables.targets
     model.fit(
         tables.train_X.loc[fit_rows, tables.feature_columns],

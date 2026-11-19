@@ -92,16 +92,27 @@ def _plan(setup: str, training: pd.DataFrame, scored: tuple[str, ...], k: int | 
     return FoldPlan(setup, k, inner, refit=_ids(training), scored=scored)
 
 
-def patient_rows(tables: Tables, ids: Sequence[str]) -> np.ndarray:
-    """Boolean mask of the table rows of `ids`; raises if a patient has no rows.
+@dataclass(frozen=True)
+class PatientIndex:
+    """Integer patient codes of the table rows, built once per table and reused for every fold.
 
-    Integer codes per patient: np.isin on string ids took ~6 min per call on all dev rows.
+    np.isin on string ids took ~6 min per call on all dev rows; on integer codes it is instant.
     """
-    pid, patient_index = pd.factorize(tables.targets["patient_id"])
-    codes = pd.Index(patient_index).get_indexer(list(ids))
-    if (codes < 0).any():
-        raise ValueError("a planned patient has no rows in the tables")
-    return np.isin(pid, codes)
+
+    codes: np.ndarray
+    patients: pd.Index
+
+    @classmethod
+    def of(cls, tables: Tables) -> PatientIndex:
+        codes, patients = pd.factorize(tables.targets["patient_id"])
+        return cls(codes, pd.Index(patients))
+
+    def rows(self, ids: Sequence[str]) -> np.ndarray:
+        """Boolean mask of the table rows of `ids`; raises if a patient has no rows."""
+        wanted = self.patients.get_indexer(list(ids))
+        if (wanted < 0).any():
+            raise ValueError("a planned patient has no rows in the tables")
+        return np.isin(self.codes, wanted)
 
 
 def _check_aligned(tables: Tables, labels: pd.DataFrame) -> None:
@@ -118,12 +129,13 @@ def run_setup(
     new_model: Callable[[], RiskModel],
     target: str,
     grid: Mapping[str, float],
+    score_jobs: int = 1,
 ) -> SetupResult:
     """Fit, tune and score one setup.
 
     `labels` are the patient-hour rows (`patient_id, hour, hospital, SepsisLabel`) aligned with
     the tables. `new_model()` returns a fresh, unfitted model. `grid` is `threshold.grid` from
-    configs/eval.yaml.
+    configs/eval.yaml. `score_jobs` > 1 scores mix's hospitals in parallel processes.
     """
     _check_aligned(tables, labels)
     start = time.perf_counter()
@@ -132,8 +144,7 @@ def run_setup(
     X_train = tables.train_X[tables.feature_columns]
     X_eval = tables.eval_X[tables.feature_columns]
 
-    def rows(ids: Sequence[str]) -> np.ndarray:
-        return patient_rows(tables, ids)
+    rows = PatientIndex.of(tables).rows
 
     def fit_predict(
         fit_ids: Sequence[str], predict_ids: Sequence[str], fold_row: dict[str, Any]
@@ -189,7 +200,7 @@ def run_setup(
     pooled = pd.concat(scored_parts, ignore_index=True)
     scored_labels = labels[rows(_ids(pooled.drop_duplicates("patient_id")))]
     if setup == "mix":
-        result_scores = score_by_hospital(scored_labels, pooled)
+        result_scores = score_by_hospital(scored_labels, pooled, jobs=score_jobs)
     else:
         result_scores = {"all": score(scored_labels, pooled)}
     columns = [*KEYS, "kind", "outer_fold", "inner_fold", "score", "alarm"]

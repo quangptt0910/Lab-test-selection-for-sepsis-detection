@@ -20,6 +20,11 @@ Every risk-model experiment (B0–B3, ablations) must be run, scored and logged 
 ## Note (M3-3): analyses reuse the runner
 `load_dev_tables` (in `run_experiment.py`) loads the dev split, patient-hours and model tables for a config, so the CLI and the analyses (`sepsis.eval.importance`, `sepsis.eval.ordering_diagnostic`) build the same tables. `sepsis.eval.refit` refits the scored A → B / B → A model of a finished run (same config, seed, preprocessing and rows through `plan_setup` and `patient_rows`), and `check_against_run` refuses to analyse a refit whose scores differ from the run's `predictions.parquet`.
 
+Analyses write next to the run they read, never into the LOG: `importance.csv` inside the run folder, and the ordering diagnostic's `<id>-ordering/` folder beside it.
+
+## Note (M3-3): parallel setups and scoring
+`parallel.setup_jobs` (configs/eval.yaml, `--jobs` on the CLI) runs the setups in separate processes, and `parallel.score_jobs` scores mix → A and mix → B at the same time. Each worker reads the tables from the feature cache by key and makes the same `run_setup` call as the serial path, so results are identical (a toy test compares a serial and a parallel run; `scripts/bench_scoring.py` re-scores a real run both ways). Without a cache (`--no-cache`) the setups run in turn. `meta.json` records `setup_jobs`.
+
 ## Consequences
 - Every experiment is compared on the same folds, thresholds rule and scorer, and A-test and B-test are never loaded (tests patch the all-patient readers to fail).
 - A repeated experiment with the same features and seed skips the table build. Any change to the configs or to the code that builds the tables gives a new cache key.
