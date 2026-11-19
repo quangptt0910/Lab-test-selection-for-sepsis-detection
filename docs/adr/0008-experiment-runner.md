@@ -20,5 +20,5 @@ Every risk-model experiment (B0–B3, ablations) must be run, scored and logged 
 ## Consequences
 - Every experiment is compared on the same folds, thresholds rule and scorer, and A-test and B-test are never loaded (tests patch the all-patient readers to fail).
 - A repeated experiment with the same features and seed skips the table build. Any change to the configs or to the code that builds the tables gives a new cache key.
-- One full experiment is 37 model fits (A → B 6, B → A 6, mix 25) plus 7 threshold tunings.
+- One full experiment is 37 model fits (A → B 6, B → A 6, mix 25) plus 7 threshold tunings. On all dev patients a tuning takes about 26 s and one official-scorer call about 3 min (it writes one file per patient), so the scorer dominates a run with a fast model.
 - Untracked experiment configs do not make the tree dirty; the config is copied into the run folder.

@@ -114,14 +114,18 @@ def run_setup(
     """
     _check_aligned(tables, labels)
     start = time.perf_counter()
-    pid = tables.targets["patient_id"].to_numpy()
+    # Integer codes per patient: np.isin on string ids took ~6 min per call on all dev rows.
+    pid, patient_index = pd.factorize(tables.targets["patient_id"])
     y = tables.targets[TARGET_COLUMN[target]].to_numpy(dtype=float)
     weight = tables.targets["weight"].to_numpy(dtype=float)
     X_train = tables.train_X[tables.feature_columns]
     X_eval = tables.eval_X[tables.feature_columns]
 
     def rows(ids: Sequence[str]) -> np.ndarray:
-        return np.isin(pid, np.asarray(ids, dtype=object))
+        codes = pd.Index(patient_index).get_indexer(list(ids))
+        if (codes < 0).any():
+            raise ValueError("a planned patient has no rows in the tables")
+        return np.isin(pid, codes)
 
     def fit_predict(fit_ids, predict_ids, fold_row: dict) -> pd.DataFrame:
         fit_rows, predict_rows = rows(fit_ids), rows(predict_ids)
