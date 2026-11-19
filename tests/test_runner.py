@@ -12,6 +12,7 @@ import sepsis.data.load as load_module
 import sepsis.data.splits as splits_module
 import sepsis.eval.run_experiment as cli
 import sepsis.eval.runner as runner_module
+from sepsis.config import load_yaml
 from sepsis.eval.run_experiment import RunRefusedError, logged_ids, main
 from sepsis.eval.runner import (
     PARTIAL_NOTE,
@@ -24,7 +25,7 @@ from sepsis.eval.runner import (
 from sepsis.eval.scorer import Scores
 from sepsis.eval.tables import KEYS, Tables, build_tables
 from sepsis.eval.threshold import training_side_patients
-from sepsis.risk.base import MODELS, DummyModel
+from sepsis.risk.base import MODELS, DummyModel, make_model
 
 SPLIT = patients()
 REAL_APPEND = cli.append_log_row
@@ -169,6 +170,45 @@ def test_thresholds_are_tuned_on_out_of_fold_rows_only(tables, labels, setup, mo
             check_dtype=False,
         )
         assert set(pid[models[(i + 1) * per_plan - 1].predict_index]) == set(plan.scored)
+
+
+PREPROCESSING = load_yaml(Path("configs/preprocessing.yaml"))["b1"]
+BASELINES = {
+    "rule_score": ({"weights": {"sirs_count": 1, "partial_sofa": 1}}, "utility_diff"),
+    "logistic": ({"C": 1.0, "max_iter": 200}, "sepsis_label"),
+    "lightgbm_regressor": ({"n_estimators": 5, "min_child_samples": 2}, "utility_diff"),
+}
+
+
+def _run_baseline(tables, labels, setup, model_type):
+    params, target = BASELINES[model_type]
+    built = []
+
+    def new_model():
+        built.append(make_model(model_type, params, seed=0, preprocessing=PREPROCESSING))
+        return built[-1]
+
+    result = run_setup(tables, labels, SPLIT, setup, new_model=new_model, target=target, grid=GRID)
+    return result, built
+
+
+@pytest.mark.parametrize("model_type", sorted(BASELINES))
+def test_every_baseline_runs_under_the_runner(tables, labels, model_type) -> None:
+    result, _ = _run_baseline(tables, labels, "mix", model_type)
+    assert set(result.scores) == {"A", "B"}
+    assert np.isfinite(result.predictions["score"]).all()
+
+
+def test_logistic_scaler_sees_only_the_training_hospital(tables, labels) -> None:
+    _, built = _run_baseline(tables, labels, "A_to_B", "logistic")
+    refit = built[-1]  # fitted on all of A-dev, scores B-dev
+    column = refit.columns_.index("Lactate")
+    rows = (tables.targets["patient_id"].str[0] == "A").to_numpy()
+    normal = PREPROCESSING["lab_fill"]["Lactate"]["value"]
+    lactate = tables.train_X.loc[rows, "Lactate"].fillna(normal)
+    # Toy B lactate lies above every A value, so any B row in the fit would move this mean.
+    assert refit.scaler_.mean_[column] == pytest.approx(np.log1p(lactate).mean())
+    assert refit.fill_["HR"] == np.nanmedian(tables.train_X.loc[rows, "HR"])
 
 
 def test_fits_use_the_training_view_and_predictions_the_evaluation_view(tables, labels) -> None:
@@ -393,8 +433,22 @@ def test_a_run_that_fails_after_writing_its_folder_can_be_rerun(toy: dict, monke
     assert not (runs / "toy-001" / "stale.txt").exists()  # the stale .partial was replaced
 
 
+def test_a_logistic_run_records_its_preprocessing(toy: dict) -> None:
+    config = experiment(
+        toy["root"],
+        id="toy-b1",
+        split={"setups": ["A_to_B"]},
+        target="sepsis_label",
+        model={"type": "logistic", "params": {"C": 1.0, "max_iter": 200}},
+    )
+    assert _main(toy, config) == 0
+    run = toy["root"] / "experiments" / "runs" / "toy-b1"
+    recorded = load_yaml(run / "resolved" / "preprocessing.yaml")
+    assert recorded == PREPROCESSING
+
+
 def test_an_unregistered_model_is_refused_before_any_work(toy: dict, monkeypatch) -> None:
-    config = experiment(toy["root"], model={"type": "lightgbm_regressor", "params": {}})
+    config = experiment(toy["root"], model={"type": "xgboost", "params": {}})
     with pytest.raises(ValueError, match="not registered"):
         _main(toy, config)
     assert toy["requested"] == []  # nothing was loaded

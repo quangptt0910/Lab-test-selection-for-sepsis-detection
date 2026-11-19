@@ -38,7 +38,7 @@ from sepsis.config import (
     PROTOCOL_CONFIG,
     load_yaml,
 )
-from sepsis.data.panels import PANELS_CONFIG
+from sepsis.data.panels import PANELS_CONFIG, PREPROCESSING_CONFIG
 from sepsis.data.splits import load_patient_hours, load_project_split
 from sepsis.eval.experiment_config import check_model_type, validate_experiment_config
 from sepsis.eval.runner import log_row, red_flags, run_setup
@@ -161,6 +161,7 @@ def main(
     # 4. Run each setup.
     eval_config = load_yaml(EVAL_CONFIG)
     limits = load_yaml(PROTOCOL_CONFIG)["red_flags"]
+    preprocessing = load_yaml(PREPROCESSING_CONFIG)["b1"]  # B1's fills and log labs (ADR-0005)
     grid = dict(eval_config["threshold"]["grid"] if grid is None else grid)
     model = cfg["model"]
     results = {}
@@ -171,7 +172,9 @@ def main(
             labels,
             split,
             setup,
-            new_model=lambda: make_model(model["type"], model["params"], int(cfg["seed"])),
+            new_model=lambda: make_model(
+                model["type"], model["params"], int(cfg["seed"]), preprocessing=preprocessing
+            ),
             target=cfg["target"],
             grid=grid,
         )
@@ -191,6 +194,7 @@ def main(
         "labels.yaml": asdict(settings.labels),
         "eval_grid.yaml": grid,
         "red_flags.yaml": limits,
+        "preprocessing.yaml": preprocessing,
     }
     (partial / "resolved").mkdir()
     for name, value in resolved.items():
