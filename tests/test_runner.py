@@ -1,0 +1,334 @@
+import json
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pytest
+from runner_toy import GRID, experiment, patients, project, records
+from test_tables import settings
+
+import sepsis.data.load as load_module
+import sepsis.data.splits as splits_module
+import sepsis.eval.run_experiment as cli
+import sepsis.eval.runner as runner_module
+from sepsis.eval.run_experiment import RunRefusedError, logged_ids, main
+from sepsis.eval.runner import (
+    PARTIAL_NOTE,
+    SetupResult,
+    log_row,
+    plan_setup,
+    red_flags,
+    run_setup,
+)
+from sepsis.eval.scorer import Scores
+from sepsis.eval.tables import KEYS, Tables, build_tables
+from sepsis.eval.threshold import training_side_patients
+from sepsis.risk.base import MODELS, DummyModel
+
+SPLIT = patients()
+DEV = SPLIT[SPLIT["split"] == "dev"]
+TEST_IDS = set(SPLIT.loc[SPLIT["split"] == "test", "patient_id"])
+CLEAN = lambda: ("abc1234", False)  # noqa: E731  (an injected git check: clean tree)
+
+
+@pytest.fixture(scope="module")
+def tables() -> Tables:
+    hours = records()
+    return build_tables(hours[hours["patient_id"].isin(DEV["patient_id"])], settings())
+
+
+@pytest.fixture(scope="module")
+def labels(tables: Tables) -> pd.DataFrame:
+    hospital = tables.targets["patient_id"].str[0]
+    return tables.targets[[*KEYS, "SepsisLabel"]].assign(hospital=hospital)
+
+
+class Spy(DummyModel):
+    """Records which rows each model instance was fitted on and predicted."""
+
+    log: list = []
+
+    def fit(self, X, y, sample_weight):
+        self.fit_index, self.fit_X, self.y, self.w = X.index, X, y, sample_weight
+        Spy.log.append(self)
+        return super().fit(X, y, sample_weight)
+
+    def predict(self, X):
+        self.predict_index, self.predict_X = X.index, X
+        return super().predict(X)
+
+
+def _run(tables, labels, setup, target="utility_diff"):
+    Spy.log = []
+    result = run_setup(
+        tables,
+        labels,
+        SPLIT,
+        setup,
+        new_model=lambda: Spy("partial_sofa"),
+        target=target,
+        grid=GRID,
+    )
+    return result, list(Spy.log)
+
+
+# --- Fold plans and fit sides ---------------------------------------------------------------------
+
+
+def test_fold_plans_follow_the_stored_folds() -> None:
+    a_to_b = plan_setup(SPLIT, "A_to_B")
+    assert len(a_to_b) == 1 and len(a_to_b[0].inner) == 5
+    assert set(a_to_b[0].refit) == set(DEV.loc[DEV["hospital"] == "A", "patient_id"])
+    assert set(a_to_b[0].scored) == set(DEV.loc[DEV["hospital"] == "B", "patient_id"])
+    mix = plan_setup(SPLIT, "mix")
+    assert [p.outer_fold for p in mix] == [0, 1, 2, 3, 4]
+    for plan in mix:
+        assert len(plan.inner) == 4
+        assert set(plan.scored) == set(DEV.loc[DEV["fold"] == plan.outer_fold, "patient_id"])
+        assert not set(plan.refit) & set(plan.scored)
+
+
+@pytest.mark.parametrize("setup", ["A_to_B", "B_to_A", "mix"])
+def test_models_fit_only_on_the_training_side_and_never_predict_their_own_patients(
+    tables, labels, setup
+) -> None:
+    _, models = _run(tables, labels, setup)
+    pid = tables.targets["patient_id"]
+    plans = plan_setup(SPLIT, setup)
+    assert len(models) == sum(len(p.inner) + 1 for p in plans)
+    allowed = set().union(*(training_side_patients(SPLIT, setup, p.outer_fold) for p in plans))
+    for model in models:
+        fitted = set(pid[model.fit_index])
+        predicted = set(pid[model.predict_index])
+        assert fitted <= allowed  # never the evaluated hospital or the held-out mix fold
+        assert not fitted & TEST_IDS and not predicted & TEST_IDS
+        assert not fitted & predicted  # out-of-fold and scored rows come from other patients
+        # The dummy's fitted statistic comes from its training rows only.
+        assert model.fill_ == np.nanmin(tables.train_X.loc[model.fit_index, "partial_sofa"])
+
+
+def test_fits_use_the_training_view_and_predictions_the_evaluation_view(tables, labels) -> None:
+    _, models = _run(tables, labels, "B_to_A")
+    columns = tables.feature_columns
+    for model in models:
+        pd.testing.assert_frame_equal(model.fit_X, tables.train_X.loc[model.fit_index, columns])
+        pd.testing.assert_frame_equal(
+            model.predict_X, tables.eval_X.loc[model.predict_index, columns]
+        )
+
+
+@pytest.mark.parametrize(
+    ("target", "column"), [("utility_diff", "utility_diff"), ("sepsis_label", "SepsisLabel")]
+)
+def test_targets_and_weights_come_from_the_target_table(tables, labels, target, column) -> None:
+    _, models = _run(tables, labels, "A_to_B", target=target)
+    for model in models:
+        rows = tables.targets.loc[model.fit_index]
+        np.testing.assert_array_equal(model.y, rows[column].to_numpy(dtype=float))
+        np.testing.assert_array_equal(model.w, rows["weight"].to_numpy(dtype=float))
+
+
+def test_mix_tunes_one_threshold_per_outer_fold_and_scores_each_hospital(tables, labels) -> None:
+    result, _ = _run(tables, labels, "mix")
+    assert [t["outer_fold"] for t in result.thresholds] == [0, 1, 2, 3, 4]
+    assert set(result.scores) == {"A", "B"}
+    scored = result.predictions[result.predictions["kind"] == "scored"]
+    assert set(scored["patient_id"]) == set(DEV["patient_id"])  # each dev patient scored once
+    assert not scored.duplicated(KEYS).any()
+
+
+# --- Summaries ----------------------------------------------------------------------------------
+
+
+def _result(setup: str, utility: float, auroc: float = 0.8) -> SetupResult:
+    s = Scores(auroc=auroc, auprc=0.1, accuracy=0.9, f_measure=0.2, utility=utility)
+    scores = {"A": s, "B": s} if setup == "mix" else {"all": s}
+    return SetupResult(setup, scores, [], pd.DataFrame(), pd.DataFrame(), pd.DataFrame())
+
+
+CFG = {"id": "x-1", "note": "a|b"}
+
+
+def test_log_row_for_a_full_run() -> None:
+    results = {s: _result(s, 0.3) for s in ("A_to_B", "B_to_A", "mix")}
+    row = log_row(CFG, "configs/x.yaml", results, sha="abc", date="2026-11-19")
+    assert row == (
+        "| x-1 | 2026-11-19 | abc | configs/x.yaml | dev | 0.300 | 0.300 | 0.300 | 0.300 "
+        "| 0.800 | — | a\\|b |"
+    )
+
+
+def test_log_row_for_a_partial_run_with_red_flags() -> None:
+    results = {"mix": _result("mix", 0.2), "B_to_A": _result("B_to_A", 0.4, auroc=0.97)}
+    row = log_row({"id": "x-2", "note": ""}, "c.yaml", results, sha="s", date="d")
+    cells = [c.strip() for c in row.strip("|").split("|")]
+    assert cells[5:9] == ["—", "0.400", "0.200", "0.200"]
+    assert cells[9] == "0.857 (3 of 4)"
+    assert PARTIAL_NOTE in cells[11]
+    assert "B→A AUROC 0.970 > 0.95" in cells[11]
+    assert "B→A utility beats mix→A" in cells[11]
+
+
+def test_red_flag_when_the_two_directions_differ() -> None:
+    results = {"A_to_B": _result("A_to_B", 0.05), "B_to_A": _result("B_to_A", 0.3)}
+    assert any("differ by more than 0.15" in f for f in red_flags(results))
+
+
+# --- The CLI end to end ---------------------------------------------------------------------------
+
+
+def _main(p: dict, config: Path, *extra: str, git=CLEAN) -> int:
+    return main(
+        [str(config), *extra],
+        root=p["root"],
+        data_config=p["data_config"],
+        protocol_config=p["protocol_config"],
+        git_check=git,
+        grid=GRID,
+    )
+
+
+@pytest.fixture(scope="module")
+def shared(tmp_path_factory) -> Path:
+    """The toy cache, split file and feature cache, built once for all CLI tests."""
+    return tmp_path_factory.mktemp("toy_data")
+
+
+@pytest.fixture
+def toy(tmp_path: Path, shared: Path, monkeypatch) -> dict:
+    p = project(tmp_path, data_dir=shared)
+    requested = []
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("the runner read every patient (test patients included)")
+
+    real = splits_module.read_cache_patients
+
+    def spy(hospitals, cache_dir, ids):
+        ids = list(ids)
+        requested.extend(ids)
+        return real(hospitals, cache_dir, ids)
+
+    for name in ("read_cache", "read_raw_hospital", "read_raw_all"):
+        monkeypatch.setattr(load_module, name, forbidden)
+    monkeypatch.setattr(splits_module, "read_cache_patients", spy)
+    p["requested"] = requested
+    return p
+
+
+def test_end_to_end_run_writes_the_run_folder_and_one_log_row(toy: dict) -> None:
+    config = experiment(toy["root"])
+    assert _main(toy, config) == 0
+    run = toy["root"] / "experiments" / "runs" / "toy-001"
+    for name in [
+        "config.yaml",
+        "meta.json",
+        "scores.json",
+        "feature_columns.json",
+        "resolved/features.yaml",
+        "resolved/eval_grid.yaml",
+        *(
+            f"{s}/{f}"
+            for s in ("A_to_B", "B_to_A", "mix")
+            for f in ("thresholds.json", "threshold_curve.csv", "folds.csv", "predictions.parquet")
+        ),
+    ]:
+        assert (run / name).exists(), name
+    rows = [
+        r
+        for r in (toy["root"] / "experiments" / "LOG.md").read_text(encoding="utf-8").splitlines()
+        if "toy-001" in r
+    ]
+    assert len(rows) == 1
+    cells = [c.strip() for c in rows[0].strip("|").split("|")]
+    assert all(c not in ("", "—") for c in cells[5:9])  # all four numbers
+    scores = json.loads((run / "scores.json").read_text(encoding="utf-8"))
+    assert set(scores) == {"A_to_B", "B_to_A", "mix_A", "mix_B"}
+    # Test patients were never requested from the cache (ADR-0004).
+    assert toy["requested"] and not set(toy["requested"]) & TEST_IDS
+
+
+def test_partial_run_writes_dashes_and_the_partial_note(toy: dict) -> None:
+    config = experiment(toy["root"], split={"setups": ["B_to_A"]})
+    _main(toy, config)
+    row = (toy["root"] / "experiments" / "LOG.md").read_text(encoding="utf-8").splitlines()[-1]
+    cells = [c.strip() for c in row.strip("|").split("|")]
+    assert cells[5] == "—" and cells[7] == "—" and cells[8] == "—"
+    assert PARTIAL_NOTE in cells[11]
+
+
+def test_duplicate_ids_and_finished_runs_are_refused(toy: dict) -> None:
+    config = experiment(toy["root"], split={"setups": ["A_to_B"]})
+    _main(toy, config)
+    with pytest.raises(RunRefusedError, match="already in"):
+        _main(toy, config)
+    # Exact match on the id cell: toy-0011 is a different id.
+    other = experiment(toy["root"], id="toy-0011", split={"setups": ["A_to_B"]})
+    _main(toy, other)
+    assert {"toy-001", "toy-0011"} <= logged_ids(toy["root"] / "experiments" / "LOG.md")
+
+
+def test_a_dirty_tree_is_refused_unless_allowed(toy: dict) -> None:
+    config = experiment(toy["root"], split={"setups": ["A_to_B"]})
+    with pytest.raises(RunRefusedError, match="dirty"):
+        _main(toy, config, git=lambda: ("abc1234", True))
+    _main(toy, config, "--allow-dirty", git=lambda: ("abc1234", True))
+    row = (toy["root"] / "experiments" / "LOG.md").read_text(encoding="utf-8").splitlines()[-1]
+    assert "abc1234-dirty" in row
+
+
+def test_a_crashed_run_writes_no_log_row_and_can_be_rerun(toy: dict, monkeypatch) -> None:
+    config = experiment(toy["root"], split={"setups": ["A_to_B", "mix"]})
+    real = runner_module.run_setup
+
+    def crash_on_mix(*args, **kwargs):
+        if args[3] == "mix":
+            raise RuntimeError("crash")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(cli, "run_setup", crash_on_mix)
+    with pytest.raises(RuntimeError, match="crash"):
+        _main(toy, config)
+    assert "toy-001" not in logged_ids(toy["root"] / "experiments" / "LOG.md")
+    assert not (toy["root"] / "experiments" / "runs" / "toy-001").exists()
+    monkeypatch.setattr(cli, "run_setup", real)
+    assert _main(toy, config) == 0
+    assert "toy-001" in logged_ids(toy["root"] / "experiments" / "LOG.md")
+
+
+def test_an_unregistered_model_is_refused_before_any_work(toy: dict, monkeypatch) -> None:
+    config = experiment(toy["root"], model={"type": "lightgbm_regressor", "params": {}})
+    with pytest.raises(ValueError, match="not registered"):
+        _main(toy, config)
+    assert toy["requested"] == []  # nothing was loaded
+    assert "dummy" in MODELS
+
+
+# --- Real data ------------------------------------------------------------------------------------
+
+
+@pytest.mark.slow
+def test_dummy_b_to_a_on_real_dev_data(tmp_path: Path) -> None:
+    from sepsis.config import DATA_CONFIG, PROTOCOL_CONFIG, load_yaml
+
+    data = load_yaml(DATA_CONFIG)
+    if not Path(data["split_path"]).exists() or not Path(data["cache_dir"]).exists():
+        pytest.skip("real data cache or split file not found")
+    (tmp_path / "experiments").mkdir()
+    (tmp_path / "experiments" / "LOG.md").write_text(
+        Path("experiments/LOG.md").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    config = experiment(tmp_path, id="smoke-001", split={"setups": ["B_to_A"]})
+    assert (
+        main(
+            [str(config), "--no-cache"],
+            root=tmp_path,
+            data_config=DATA_CONFIG,
+            protocol_config=PROTOCOL_CONFIG,
+            git_check=CLEAN,
+        )
+        == 0
+    )
+    run = tmp_path / "experiments" / "runs" / "smoke-001"
+    scores = json.loads((run / "scores.json").read_text(encoding="utf-8"))
+    assert 0.0 < scores["B_to_A"]["auroc"] < 1.0

@@ -1,0 +1,236 @@
+"""Run one experiment config under the setups of ADR-0004 and log it (ADR-0008).
+
+    uv run python -m sepsis.eval.run_experiment configs/<name>.yaml [--allow-dirty] [--no-cache]
+
+All file I/O of an experiment lives here: read and check the config, load dev patients, build or
+load the cached model tables, run each setup (`sepsis.eval.runner`), write the run folder
+`experiments/runs/<id>/`, and append one row to `experiments/LOG.md`. A-test and B-test are never
+loaded: patients come only from `load_patient_hours` without `final_eval`.
+
+The run folder is written as `<id>.partial` and renamed after the LOG row is appended, so a crashed
+run leaves no LOG row and can be rerun under the same id.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import platform
+import shutil
+import subprocess
+import sys
+import time
+from collections.abc import Callable, Mapping
+from dataclasses import asdict
+from datetime import date
+from importlib.metadata import version
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from sepsis.config import DATA_CONFIG, EVAL_CONFIG, FEATURES_CONFIG, PROTOCOL_CONFIG, load_yaml
+from sepsis.data.panels import PANELS_CONFIG
+from sepsis.data.splits import load_patient_hours, load_project_split
+from sepsis.eval.experiment_config import check_model_type, validate_experiment_config
+from sepsis.eval.runner import log_row, red_flags, run_setup
+from sepsis.eval.scorer import scorer_sha256
+from sepsis.eval.tables import KEYS, TableSettings, load_or_build
+from sepsis.features.builder import with_blocks
+from sepsis.labels.utility import LABELS_CONFIG, UtilityConstants
+from sepsis.risk.base import make_model
+
+CLEANING_CONFIG = Path("configs/cleaning.yaml")
+LOG_PATH = Path("experiments/LOG.md")
+RUNS_DIR = Path("experiments/runs")
+# The LOG is appended by every run, so it does not make the tree dirty for the next run.
+DIRTY_IGNORED = {"experiments/LOG.md"}
+
+GitCheck = Callable[[], tuple[str, bool]]
+
+
+class RunRefusedError(RuntimeError):
+    """Raised when a run must not start (duplicate id, dirty tree, finished run folder)."""
+
+
+def git_state() -> tuple[str, bool]:
+    """`(short SHA, dirty)`. Dirty = tracked files changed, except `experiments/LOG.md`."""
+    sha = subprocess.run(
+        ["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    status = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=no"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.splitlines()
+    changed = {line[3:].strip() for line in status if line.strip()}
+    return sha, bool(changed - DIRTY_IGNORED)
+
+
+def logged_ids(log_path: Path) -> set[str]:
+    """Experiment ids already in the LOG (the first cell of every table row)."""
+    ids = set()
+    for line in Path(log_path).read_text(encoding="utf-8").splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if line.startswith("|") and cells and cells[0] not in ("id", "") and set(cells[0]) != {"-"}:
+            ids.add(cells[0])
+    return ids
+
+
+def _write_json(path: Path, value: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, indent=1, default=str), encoding="utf-8")
+
+
+def _versions() -> dict[str, str]:
+    packages = ("numpy", "pandas", "lightgbm", "scikit-learn", "pyarrow")
+    return {"python": platform.python_version(), **{p: version(p) for p in packages}}
+
+
+def main(
+    argv: list[str] | None = None,
+    *,
+    root: Path = Path("."),
+    data_config: Path = DATA_CONFIG,
+    protocol_config: Path = PROTOCOL_CONFIG,
+    git_check: GitCheck = git_state,
+    grid: Mapping[str, float] | None = None,
+) -> int:
+    """Run the experiment. The keyword arguments exist for tests only; never pass them elsewhere."""
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("config", type=Path)
+    parser.add_argument("--allow-dirty", action="store_true", help="run on a dirty tree (-dirty)")
+    parser.add_argument("--no-cache", action="store_true", help="rebuild the model tables")
+    args = parser.parse_args(argv)
+    started = time.perf_counter()
+    root = Path(root)
+
+    # 1. Check the config and refuse runs that must not start, before any computation.
+    features_config = load_yaml(FEATURES_CONFIG)
+    cfg = validate_experiment_config(load_yaml(args.config), features_config)
+    check_model_type(cfg)
+    log_path, run_dir = root / LOG_PATH, root / RUNS_DIR / cfg["id"]
+    if cfg["id"] in logged_ids(log_path):
+        raise RunRefusedError(f"id {cfg['id']!r} is already in {log_path}; never reuse an id")
+    if run_dir.exists():
+        raise RunRefusedError(f"{run_dir} exists; a finished run is never overwritten")
+    sha, dirty = git_check()
+    if dirty and not args.allow_dirty:
+        raise RunRefusedError("the git tree is dirty; commit first or pass --allow-dirty")
+    sha = f"{sha}-dirty" if dirty else sha
+
+    # 2. Dev patients only (ADR-0004): the split and patient-hours never include test patients.
+    split = load_project_split(_data_config=data_config, _protocol_config=protocol_config)
+    hours = load_patient_hours(
+        ["A", "B"],
+        split["patient_id"],
+        _data_config=data_config,
+        _protocol_config=protocol_config,
+    )
+    hours = hours.sort_values(KEYS, kind="stable").reset_index(drop=True)
+    labels = hours[[*KEYS, "hospital", "SepsisLabel"]]
+
+    # 3. Model tables, built once for all dev patients (cached unless --no-cache).
+    settings = TableSettings(
+        blocks=tuple(cfg["features"]["hand_crafted"]),
+        lab_masking_p=float(cfg["features"]["lab_masking_p"]),
+        seed=int(cfg["seed"]),
+        cleaning=load_yaml(CLEANING_CONFIG),
+        panels=load_yaml(PANELS_CONFIG),
+        features=features_config,
+        labels=UtilityConstants.from_config(load_yaml(LABELS_CONFIG)),
+    )
+    cache_dir = None if args.no_cache else Path(load_yaml(data_config)["cache_dir"]) / "features"
+    fingerprint = str(load_yaml(protocol_config)["split"]["fingerprint"])
+    tables, cache = load_or_build(
+        hours, settings, split_fingerprint=fingerprint, cache_dir=cache_dir
+    )
+
+    # 4. Run each setup.
+    eval_config = load_yaml(EVAL_CONFIG)
+    grid = dict(eval_config["threshold"]["grid"] if grid is None else grid)
+    model = cfg["model"]
+    results = {}
+    for setup in cfg["split"]["setups"]:
+        print(f"[{cfg['id']}] {setup} ...", flush=True)
+        results[setup] = run_setup(
+            tables,
+            labels,
+            split,
+            setup,
+            new_model=lambda: make_model(model["type"], model["params"], int(cfg["seed"])),
+            target=cfg["target"],
+            grid=grid,
+        )
+
+    # 5. Run folder, written as <id>.partial.
+    partial = run_dir.with_name(run_dir.name + ".partial")
+    if partial.exists():
+        shutil.rmtree(partial)  # left by a crashed run of the same id
+    partial.mkdir(parents=True)
+    (partial / "config.yaml").write_text(
+        Path(args.config).read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    resolved = {
+        "features.yaml": with_blocks(features_config, list(settings.blocks)),
+        "panels.yaml": settings.panels,
+        "cleaning.yaml": settings.cleaning,
+        "labels.yaml": asdict(settings.labels),
+        "eval_grid.yaml": grid,
+    }
+    for name, value in resolved.items():
+        (partial / "resolved").mkdir(exist_ok=True)
+        (partial / "resolved" / name).write_text(yaml.safe_dump(value), encoding="utf-8")
+    _write_json(partial / "feature_columns.json", tables.feature_columns)
+    scores = {}
+    for setup, result in results.items():
+        folder = partial / setup
+        folder.mkdir()
+        _write_json(folder / "thresholds.json", result.thresholds)
+        result.curves.to_csv(folder / "threshold_curve.csv", index=False)
+        result.folds.to_csv(folder / "folds.csv", index=False)
+        result.predictions.to_parquet(folder / "predictions.parquet", index=False)
+        for name, value in result.scores.items():
+            key = setup if name == "all" else f"{setup}_{name}"
+            scores[key] = asdict(value)
+    _write_json(partial / "scores.json", scores)
+    _write_json(
+        partial / "meta.json",
+        {
+            "id": cfg["id"],
+            "sha": sha,
+            "dirty": dirty,
+            "date": date.today().isoformat(),
+            "command": " ".join([Path(sys.argv[0]).name, *(argv or sys.argv[1:])]),
+            "config": str(args.config),
+            "seed": cfg["seed"],
+            "cache": cache,
+            "scorer_sha256": scorer_sha256(Path(eval_config["scorer"]["path"])),
+            "versions": _versions(),
+            "setup_seconds": {s: r.seconds for s, r in results.items()},
+            "wall_seconds": round(time.perf_counter() - started, 1),
+        },
+    )
+
+    # 6. LOG row, then the finished run folder.
+    row = log_row(
+        cfg,
+        Path(args.config).as_posix(),
+        results,
+        sha=sha,
+        date=date.today().isoformat(),
+    )
+    text = log_path.read_text(encoding="utf-8")
+    log_path.write_text(text + ("" if text.endswith("\n") else "\n") + row + "\n", encoding="utf-8")
+    partial.rename(run_dir)
+
+    print(json.dumps(scores, indent=1))
+    for flag in red_flags(results):
+        print(flag)
+    print(row)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
