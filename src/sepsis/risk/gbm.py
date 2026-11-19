@@ -10,15 +10,22 @@ import pandas as pd
 from lightgbm import LGBMRegressor
 
 # Set by the runner, never by an experiment config: the seed comes from the config's `seed`
-# (ADR-0008), and runs are deterministic. Aliases included.
+# (ADR-0008), and runs are deterministic. Every LightGBM alias is listed: an explicit seed such as
+# `bagging_seed` or `extra_seed` would override the one LightGBM derives from `random_state`
+# (a test checks this list against LightGBM's own alias table).
 REFUSED_PARAMS = frozenset(
     {
         "random_state",
         "seed",
         "random_seed",
         "bagging_seed",
+        "bagging_fraction_seed",
         "feature_fraction_seed",
         "data_random_seed",
+        "data_seed",
+        "extra_seed",
+        "drop_seed",
+        "objective_seed",
         "deterministic",
         "verbose",
         "verbosity",

@@ -23,6 +23,9 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 
 HOURS_SINCE_PREFIX = "hours_since_"
+# Lab-derived columns with no fixed fill yet. A median would give an untested patient the value of
+# tested (sicker) patients, which ADR-0005 forbids, so B1 refuses them until a fill is defined.
+UNFILLED_LAB_DERIVED = frozenset({"sofa_coagulation", "sofa_liver", "sofa_renal"})
 
 
 class LogisticBaseline:
@@ -73,6 +76,9 @@ class LogisticBaseline:
         y = np.asarray(y, dtype=float)
         if not np.isin(y, (0.0, 1.0)).all():
             raise ValueError("the logistic baseline needs a 0/1 target (sepsis_label)")
+        unfilled = sorted(UNFILLED_LAB_DERIVED & set(X.columns))
+        if unfilled:
+            raise ValueError(f"no fixed B1 fill for lab-derived columns {unfilled} (ADR-0005)")
         self.columns_ = list(X.columns)
         self.fill_ = self._fitted_fill(X)
         values = self._prepare(X)

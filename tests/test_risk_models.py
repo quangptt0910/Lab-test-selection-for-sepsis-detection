@@ -153,6 +153,12 @@ def test_logistic_refusals() -> None:
         logistic().predict(X)
 
 
+def test_logistic_refuses_lab_derived_columns_without_a_fixed_fill() -> None:
+    X = table(0).assign(sofa_renal=NAN)
+    with pytest.raises(ValueError, match="sofa_renal"):
+        logistic().fit(X, labels(), np.ones(len(X)))
+
+
 def test_logistic_is_deterministic() -> None:  # lbfgs uses no randomness, whatever the seed
     X = table(0)
     a = logistic(seed=0).fit(X, labels(), np.ones(len(X))).predict(table(1))
@@ -186,6 +192,16 @@ def test_lightgbm_is_reproducible_with_a_seed_and_the_seed_matters() -> None:
 
     np.testing.assert_array_equal(scores(0), scores(0))
     assert not np.array_equal(scores(0), scores(1))
+
+
+def test_lightgbm_refuses_every_alias_of_its_seed_and_determinism_params() -> None:
+    from lightgbm.basic import _ConfigAliases
+
+    names = ["seed", "bagging_seed", "feature_fraction_seed", "data_random_seed", "extra_seed"]
+    names += ["drop_seed", "objective_seed", "deterministic", "verbosity", "force_row_wise"]
+    names += ["force_col_wise"]
+    aliases = set().union(*(_ConfigAliases.get(name) for name in names))
+    assert aliases <= REFUSED_PARAMS
 
 
 @pytest.mark.parametrize("key", sorted(REFUSED_PARAMS))
