@@ -30,7 +30,11 @@ Shared vocabulary for code, docs, tickets and prompts. If a term changes, change
 - **Reveal-row table**: the record's rows, one column per lab, holding the reveal row of each recorded value (NaN: never revealed). One format for training (as recorded: recorded row + 1) and replay (request row + 1). `validate_reveal_rows` refuses a reveal sooner than the delay or older than the panel's look-back window.
 - **View table**: the view at every row of every patient at once (`ViewTable`: `values` and `lab_rows`), for training; `build_view_at` gives one patient's view at one row, for replay (cleaned and checked the same way).
 - **Panel-draw masking**: in training only, each panel draw (one patient, row and panel) is hidden with probability `lab_masking_p`, seeded per patient so a patient's mask is the same in every fold (ADR-0002, ADR-0006).
-- **Policy**: rule deciding which panel (or WAIT) to request each hour. Baselines: ALL, NONE, AS_RECORDED.
+- **Policy**: rule deciding which panels to request for each patient each hour; an empty set is WAIT (ADR-0009). It sees only a Step. Baselines: ALL (every panel every hour, which reveals exactly as recorded), NONE (never requests), AS_RECORDED.
+- **Step**: what a policy sees at row t: the view of the patients still in the ICU (rows ≤ t, revealed labs only), their feature rows at t, the risk scores and the alarms. Never the record, labels or hospital; patient ids are per-replay codes, because real ids name the hospital (`sepsis.action.policy`).
+- **Replay engine**: `sepsis.replay.engine.replay` steps all patients through row t together (view → risk → alarm → policy → reveal). Tested equal to `view_at` + `features_at` one patient at a time.
+- **Request status**: each logged request is `revealed` (new values), `nothing_new` (values in the window, all already revealed) or `unavailable` (no value in the window; never imputed).
+- **Replay models**: each replayed patient is scored by a refit of the run's model that never trained on them (the other hospital's model, or its mix fold's), with that setup's frozen threshold from the run folder.
 
 ## Models
 - **Risk model**: maps the feature row built from the view at t to a risk score (higher means more likely to alarm). Every model follows one interface, `fit(X, y, sample_weight)` and `predict(X) -> raw score` (`sepsis.risk.base`, ADR-0008).
@@ -56,7 +60,7 @@ Shared vocabulary for code, docs, tickets and prompts. If a term changes, change
 - **Utility (U)**: the official per-hour points. **Normalized utility**: (observed − inaction) / (best − inaction) over the whole dataset.
 - **U1 / U0**: utility of predicting alarm / no alarm for one patient-hour. **U1 − U0** (`utility_diff`) is the rank #1 regression target, built by `sepsis.labels.utility` with the scorer's constants in `configs/labels.yaml`. It uses the whole record, so it is a label, never a feature. The same holds for every other column of the target table (`dt, u1, u0, weight`; `LABEL_COLUMNS`).
 - **Target weight**: 1 for every scored hour, 0 for septic hours with dt > 3, which the scorer ignores (their target is 0).
-- **Labs per patient-day**: test burden metric reported next to utility.
+- **Labs per patient-day**: test burden metric reported next to utility: panel requests ÷ (scored patient-hours / 24), every request counted, unavailable ones included (ADR-0009).
 - **Setup**: how a model is trained and evaluated across hospitals (ADR-0004). **A → B**: train on A-dev, evaluate on B. **B → A**: the reverse. **Mix**: train on A-dev + B-dev with CV, report A and B patients separately (**mix → A**, **mix → B**). Mix is the optimistic number; A → B and B → A are the pessimistic ones.
 - **Training side**: the patients a setup trains and tunes on. Every fitted statistic, including the alarm threshold, comes from here.
 - **Eval side**: the dev patients a setup is evaluated on during development (B-dev for A → B). Not the same as the locked test part.
