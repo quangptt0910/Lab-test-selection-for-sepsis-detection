@@ -6,6 +6,7 @@ from sepsis.config import FEATURES_CONFIG, load_yaml
 from sepsis.eval.experiment_config import (
     ExperimentConfigError,
     check_model_type,
+    selected_blocks,
     validate_experiment_config,
 )
 
@@ -70,6 +71,11 @@ def test_the_b2_config_follows_the_schema() -> None:
         ("features.hand_crafted", ["lactate_count"], "unknown feature blocks"),
         ("features.hand_crafted", ["sirs", "sirs"], "distinct"),
         ("features.signatures", {"depth": 2}, "signatures"),
+        ("features.signatures", [], "non-empty"),
+        ("features.signatures", ["sig_nope"], "unknown signature blocks"),
+        ("features.signatures", ["sig_vitals", "sig_vitals"], "distinct"),
+        ("features.signatures", ["sirs"], "unknown signature blocks"),
+        ("features.hand_crafted", ["sirs", "sig_vitals"], "features.signatures"),
         ("features.lab_masking_p", 1.5, "lab_masking_p"),
         ("features.lab_masking_p", "0.3", "lab_masking_p"),
         ("target", "SepsisLabel", "target"),
@@ -86,3 +92,13 @@ def test_schema_rejections(path: str, value, message: str) -> None:
 def test_unknown_model_type_is_refused() -> None:
     with pytest.raises(ExperimentConfigError, match="not registered"):
         check_model_type(_with("model.type", "xgboost"))
+
+
+def test_a_b3_config_passes_and_selects_both_lists() -> None:
+    cfg = _with("features.signatures", ["sig_vitals", "sig_partial_sofa"])
+    assert validate_experiment_config(cfg, FEATURES) == cfg
+    assert selected_blocks(cfg) == ("shock_index", "sirs", "sig_vitals", "sig_partial_sofa")
+
+
+def test_no_signatures_selects_the_hand_crafted_blocks() -> None:
+    assert selected_blocks(VALID) == ("shock_index", "sirs")
