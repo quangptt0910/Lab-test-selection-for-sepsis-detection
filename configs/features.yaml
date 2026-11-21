@@ -49,6 +49,33 @@ extras:
     enabled: false
     vitals: [HR, O2Sat, Temp, SBP, MAP, Resp]
 
+# B3 (M4-1): rank #1's signatures (sepsis.features.signatures). Off by default; an experiment picks
+# them with features.signatures. Each channel gets its own 2-D path over the last window_rows rows,
+# and the log-signature to `depth` (5 terms per channel at depth 3).
+# Starting values from rank #1's code (8-row path, order 3); see docs/research/1_*.md.
+# ADR-0002: channels are vitals, shock_index and partial_sofa only (a lab-only channel's steps
+# are lab differences); a cumulative sum takes vitals only. The code refuses anything else.
+# provenance: project_assumption (channel choice), external_spec (rank #1's window and order).
+signatures:
+  sig_vitals:                           # paper: channels with a time dimension
+    enabled: false
+    channels: [MAP, HR, Resp, shock_index]
+    path: time                          # (row position, value)
+    depth: 3
+    window_rows: 8
+  sig_vitals_cumsum:                    # paper: cumulative sums of the non-stationary columns
+    enabled: false
+    channels: [HR, O2Sat, Temp, SBP, MAP, Resp]
+    path: cumsum_lead_lag               # running sum from 0, then lead-lag
+    depth: 3
+    window_rows: 8
+  sig_partial_sofa:                     # paper and code: the SOFA channel
+    enabled: false
+    channels: [partial_sofa]
+    path: time
+    depth: 3
+    window_rows: 8
+
 thresholds:
   # SOFA (Vincent et al. 1996), the components this data has. `below`: score = number of cut-offs
   # the value is below. `at_or_above`: number of cut-offs the value reaches. Cardiovascular 2-4

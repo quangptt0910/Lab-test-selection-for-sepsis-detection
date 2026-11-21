@@ -99,4 +99,5 @@ def test_experiment_configs_name_existing_feature_blocks(config: dict) -> None:
 
 def test_extras_are_off_by_default(config: dict) -> None:
     assert all(not block["enabled"] for block in config["extras"].values())
+    assert all(not block["enabled"] for block in config["signatures"].values())
     assert all(block["enabled"] for block in config["core"].values())

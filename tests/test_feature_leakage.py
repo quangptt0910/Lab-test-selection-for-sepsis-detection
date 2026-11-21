@@ -56,7 +56,7 @@ def _reveals(record: pd.DataFrame, kind: str) -> pd.DataFrame:
 
 
 def test_every_config_block_is_registered() -> None:
-    in_config = set(CONFIG["core"]) | set(CONFIG["extras"])
+    in_config = set(CONFIG["core"]) | set(CONFIG["extras"]) | set(CONFIG["signatures"])
     assert in_config == set(BLOCKS)
 
 
