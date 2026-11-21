@@ -59,3 +59,7 @@ Other top-level folders: `configs/`, `experiments/` (`LOG.md`, and gitignored `r
 - When you claim a metric or a passing test, show the command and its output.
 - Every experiment appends one row to `experiments/LOG.md`. Never edit past rows.
 - When compacting, preserve: modified files, current experiment id, latest metrics, open leakage concerns.
+
+## Git
+- IMPORTANT: ask the user and wait for a yes before every `git add`, `git commit` and `git push`. A yes covers only the step it was given for.
+- No `Co-Authored-By` or other Claude attribution lines in commit messages or PR descriptions.

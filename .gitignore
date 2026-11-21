@@ -25,5 +25,6 @@ uv.lock
 # Local handoff notes and their figures (kept out of the repo)
 /docs/M2_handoff.md
 /docs/M2_summary.json
+/docs/M3_handoff.md
 /docs/figures/
 /figures/
