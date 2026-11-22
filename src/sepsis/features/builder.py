@@ -22,7 +22,7 @@ import pandas as pd
 
 from sepsis.data.columns import LABS, VITALS
 from sepsis.data.view import KEYS, STATIC, View, ViewTable
-from sepsis.features import clinical, labs, vitals
+from sepsis.features import clinical, labs, signatures, vitals
 
 Block = Callable[
     [pd.DataFrame, pd.DataFrame, Mapping[str, Any], Mapping[str, Any], Mapping[str, Any]],
@@ -31,7 +31,7 @@ Block = Callable[
 
 # Never a feature: labels, the hospital, and every target-table column (LABEL_COLUMNS).
 FORBIDDEN_COLUMNS = ("SepsisLabel", "hospital", "dt", "u1", "u0", "utility_diff", "weight")
-SECTIONS = ("core", "extras")
+SECTIONS = ("core", "extras", "signatures")
 
 
 def _components(values, lab_rows, block, t, panels) -> pd.DataFrame:  # noqa: ANN001
@@ -62,6 +62,12 @@ BLOCKS: dict[str, Block] = {
     ),
     "vital_lags": lambda v, lr, b, t, p: vitals.lags(v, b["vitals"], b["lags"]),
     "vital_diffs": lambda v, lr, b, t, p: vitals.diffs(v, b["vitals"]),
+    **{
+        name: (
+            lambda v, lr, b, t, p, name=name: signatures.signature_block(v, b, t["sofa"], name=name)
+        )
+        for name in ("sig_vitals", "sig_vitals_cumsum", "sig_partial_sofa")
+    },
 }
 
 

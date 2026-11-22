@@ -95,8 +95,11 @@ def test_experiment_configs_name_existing_feature_blocks(config: dict) -> None:
         if isinstance(features, dict) and "hand_crafted" in features:
             unknown = sorted(set(features["hand_crafted"]) - blocks)
             assert unknown == [], f"{path.name} names unknown feature blocks {unknown}"
+            unknown = sorted(set(features.get("signatures") or []) - set(config["signatures"]))
+            assert unknown == [], f"{path.name} names unknown signature blocks {unknown}"
 
 
 def test_extras_are_off_by_default(config: dict) -> None:
     assert all(not block["enabled"] for block in config["extras"].values())
+    assert all(not block["enabled"] for block in config["signatures"].values())
     assert all(block["enabled"] for block in config["core"].values())

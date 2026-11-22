@@ -12,6 +12,7 @@ In our replay, which labs are present is decided by **our own action model**. Th
 - No counts of lab measurements, no missing/present run features, no "was measured this hour" flags for labs.
 - No differences of lab values, forward-filled or between the last two revealed values: the first is non-zero only when a new draw arrives, the second is NaN until a second draw (M2-2). Lab trends come from PartialSOFA's 24-row change.
 - Vitals are exempt: they are recorded every hour independent of our policy.
+- Signature channels (B3, M4-1) are vitals, `shock_index` and `partial_sofa` only, and a cumulative-sum signature takes vitals only. A forward-filled lab changes only when a new draw is revealed, so a lab channel's path steps are lab differences, and its level-2 terms say when in the window the draw arrived. `partial_sofa` is allowed for the same reason as its 24-row change, accepting that its 8-row window places a change of the score at the row it joined the view (a step appears only when the score changes, and `hours_since_<panel>` already gives draw recency). In replay that row follows the request, so a late request shifts the step: a small train-to-replay difference, not leakage. `bun_cr`, FiO2 ratios and other labs are not. `sepsis.features.signatures` refuses any other channel.
 - The risk model is trained with random lab masking so it learns to work on partial views.
 
 ## Consequences

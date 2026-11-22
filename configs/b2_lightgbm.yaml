@@ -16,7 +16,7 @@ features:
   # Names of feature blocks in configs/features.yaml (core or extras); settings live there.
   # B2 = the rank #1 blocks plus SIRS (ours, ADR-0001): exactly the `core` section.
   hand_crafted: [shock_index, bun_cr, partial_sofa, partial_sofa_delta, sirs, vital_minmax, hours_since_panel]
-  signatures: null           # B3: {window_h: 8, depth: 2, channels: [partial_sofa, MAP, bun_cr]}
+  signatures: null           # B3: block names from the signatures section of configs/features.yaml
   lab_masking_p: 0.3         # hide each panel draw with this probability, training only (ADR-0002, ADR-0006)
 target: utility_diff         # U1 - U0; or sepsis_label (B1). Both use the target weight (dt > 3 -> 0)
 model:

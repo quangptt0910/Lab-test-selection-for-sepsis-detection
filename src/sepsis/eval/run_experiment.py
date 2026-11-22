@@ -45,6 +45,7 @@ from sepsis.data.splits import load_patient_hours, load_project_split
 from sepsis.eval.experiment_config import (
     check_model_type,
     model_factory,
+    selected_blocks,
     validate_experiment_config,
 )
 from sepsis.eval.runner import SetupResult, log_row, red_flags, run_setup
@@ -120,7 +121,7 @@ def load_dev_tables(
     hours = hours.sort_values(KEYS, kind="stable").reset_index(drop=True)
     masking = cfg["features"]["lab_masking_p"] if lab_masking_p is None else lab_masking_p
     settings = TableSettings(
-        blocks=tuple(cfg["features"]["hand_crafted"]),
+        blocks=selected_blocks(cfg),
         lab_masking_p=float(masking),
         seed=int(cfg["seed"]),
         cleaning=load_yaml(CLEANING_CONFIG),

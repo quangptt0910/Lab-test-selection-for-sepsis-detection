@@ -14,3 +14,9 @@ Setups are defined in ADR-0004. `eval` is `dev` for every development run and `t
 | b2-004 | 2026-11-19 | 13837f8 | configs/b2_004_leaves15.yaml | dev | 0.309 | 0.328 | 0.423 | 0.355 | 0.808 | — |  |
 | b2-005 | 2026-11-19 | 13837f8 | configs/b2_005_minchild500.yaml | dev | 0.308 | 0.308 | 0.424 | 0.355 | 0.807 | — |  |
 | b2-006 | 2026-11-19 | 13837f8 | configs/b2_006_no_hours_since.yaml | dev | 0.286 | 0.336 | 0.413 | 0.333 | 0.800 | — |  |
+| b3-001 | 2026-11-22 | 725518f | configs/b3_001_sig_vitals.yaml | dev | 0.304 | 0.350 | 0.424 | 0.361 | 0.808 | — | b2-001 + sig_vitals + sig_vitals_cumsum (M4-1) |
+| b3-002 | 2026-11-22 | 725518f | configs/b3_002_sig_psofa.yaml | dev | 0.310 | 0.339 | 0.425 | 0.370 | 0.810 | — | b3-001 + sig_partial_sofa (M4-1) |
+| b2-011 | 2026-11-22 | 725518f | configs/b2_011_seed1.yaml | dev | 0.308 | 0.283 | 0.422 | 0.369 | 0.805 | — | b2-001 with seed 1 (seed repeat, M4-1) |
+| b2-012 | 2026-11-22 | 725518f | configs/b2_012_seed2.yaml | dev | 0.303 | 0.309 | 0.419 | 0.361 | 0.807 | — | b2-001 with seed 2 (seed repeat, M4-1) |
+| b3-011 | 2026-11-22 | 725518f | configs/b3_011_seed1.yaml | dev | 0.303 | 0.304 | 0.419 | 0.375 | 0.809 | — | b3-002 with seed 1 (seed repeat, M4-1) |
+| b3-012 | 2026-11-22 | 725518f | configs/b3_012_seed2.yaml | dev | 0.305 | 0.323 | 0.418 | 0.369 | 0.811 | — | b3-002 with seed 2 (seed repeat, M4-1) |

@@ -41,6 +41,12 @@ def _keys(section: Any, expected: set[str], where: str) -> Mapping[str, Any]:
     return section
 
 
+def selected_blocks(cfg: Mapping[str, Any]) -> tuple[str, ...]:
+    """Every feature block an experiment turns on: `hand_crafted`, then `signatures` (if any)."""
+    features = cfg["features"]
+    return (*features["hand_crafted"], *(features["signatures"] or []))
+
+
 def validate_experiment_config(
     cfg: Mapping[str, Any], features_config: Mapping[str, Any]
 ) -> dict[str, Any]:
@@ -73,8 +79,21 @@ def validate_experiment_config(
         with_blocks(features_config, blocks)
     except ValueError as error:
         raise ExperimentConfigError(f"features.hand_crafted: {error}") from error
-    if features["signatures"] is not None:
-        raise ExperimentConfigError("features.signatures must be null until signatures exist (M4)")
+    signature_blocks = set(features_config.get("signatures", {}))
+    misplaced = sorted(set(blocks) & signature_blocks)
+    if misplaced:
+        raise ExperimentConfigError(
+            f"features.hand_crafted: put {misplaced} in features.signatures"
+        )
+    signatures = features["signatures"]
+    if signatures is not None:  # B3 (M4-1): block names from the `signatures` section
+        if not isinstance(signatures, list) or not signatures:
+            raise ExperimentConfigError("features.signatures must be null or a non-empty list")
+        if len(set(signatures)) != len(signatures):
+            raise ExperimentConfigError("features.signatures must list distinct block names")
+        unknown = sorted(set(signatures) - signature_blocks)
+        if unknown:
+            raise ExperimentConfigError(f"features.signatures: unknown signature blocks {unknown}")
     p = features["lab_masking_p"]
     if isinstance(p, bool) or not isinstance(p, int | float) or not 0 <= p <= 1:
         raise ExperimentConfigError("features.lab_masking_p must be a number between 0 and 1")

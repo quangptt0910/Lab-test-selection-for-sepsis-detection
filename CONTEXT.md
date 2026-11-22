@@ -43,7 +43,7 @@ Shared vocabulary for code, docs, tickets and prompts. If a term changes, change
 - **WAIT**: no panel's VoI exceeds its cost.
 - **B0–B3**: baseline ladder, registered in `sepsis.risk.base.MODELS`. B0 `rule_score`: a fixed weighted sum of SIRS count and PartialSOFA with a tuned threshold. B1 `logistic`: logistic regression on `sepsis_label` with the ADR-0005 fills, score = log-odds. B2 `lightgbm_regressor`: LightGBM on U1 − U0. B3: B2 + signatures.
 
-- **Feature block**: a named group of feature columns in `configs/features.yaml` (`core` on, `extras` off by default), built by one entry of `BLOCKS` in `sepsis.features.builder`. An experiment picks blocks by name (`hand_crafted`).
+- **Feature block**: a named group of feature columns in `configs/features.yaml` (`core` on, `extras` and `signatures` off by default), built by one entry of `BLOCKS` in `sepsis.features.builder`. An experiment picks blocks by name: `hand_crafted` for `core`/`extras`, `signatures` for the signature blocks.
 - **Feature row**: one row of `build_features` output: `patient_id, hour`, `ICULOS`, the raw view columns minus `raw.exclude`, and the enabled blocks' columns. Built from the view only.
 - **Batch / hour by hour**: `build_features` on the view table (training) and `features_at` on `view_at` (replay) give identical rows.
 
@@ -54,7 +54,7 @@ Shared vocabulary for code, docs, tickets and prompts. If a term changes, change
 - **Partial qSOFA**: 0–2 from Resp ≥ 22 and SBP ≤ 100; altered mentation is not in the data.
 - **Component scores**: `sofa_<component>` and `news_<vital>` (NEWS2) score one input each and are NaN exactly when that input is NaN, so they add no missingness signal beyond the raw value. The sums (PartialSOFA, SIRS, qSOFA) score a missing input exactly like a normal one (ADR-0002).
 - **hours_since_<panel>**: rows since the most recent revealed value of the panel was recorded (not since it was requested); NaN if none was ever revealed.
-- **Signature**: summary of a path over a window. Level 1 = net changes; level 2 = signed areas (order of events).
+- **Signature**: summary of a path over a window. Level 1 = net changes; level 2 = signed areas (order of events). B3 uses the log-signature to depth 3 of a 2-D path per channel over the last `window_rows` rows (padded with the first row at the stay start): `time` (row position, value) or `cumsum_lead_lag` (running sum, then lead-lag). Channels: vitals, `shock_index`, `partial_sofa` (ADR-0002).
 
 ## Evaluation
 - **Utility (U)**: the official per-hour points. **Normalized utility**: (observed − inaction) / (best − inaction) over the whole dataset.

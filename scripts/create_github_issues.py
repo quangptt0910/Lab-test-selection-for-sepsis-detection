@@ -314,15 +314,24 @@ Acceptance:
 ## M4: Signatures (optional) | LOG row; B3 is kept only if it improves the mix result without hurting A → B or B → A
 
 ### M4-1 | Try signature features (B3) | features experiment optional
-Test whether rank 1's signature features help on top of B2.
+Test whether rank #1's signature features help on top of the tuned B2 (`b2-001`) without bringing in lab-ordering signal, and keep B3 only if the gain is larger than run-to-run noise.
+Why it changed after M3: rank #1's signature gain (+0.012) was smaller than their fold std (0.018), and M3 has no seed repeats. Their code (the reference: per-column order-3 log-signatures after lead-lag, 8-row path, channels SOFA, BUN/CR, SaO2/FiO2) differs from the paper (PartialSOFA, MAP, BUN/CR with a time channel, plus cumulative-sum signatures). A forward-filled lab changes only when a new value is revealed, so a signature over a lab channel acts like a difference of forward-filled labs (rejected in docs/research/top4-solutions.md) and carries ordering behaviour, which M3-3 found hospital-specific. SaO2 is excluded (`raw.exclude`).
 Depends on: M3-3
 Tasks:
-- Install `iisignature` on Windows (`uv sync --extra signatures`), with a fallback plan if it fails.
-- Add signature features over windows ending at t: `[partial_sofa, MAP, bun_cr]` with a time channel, and vitals after cumulative sum and lead-lag, as in `rank1-features`.
-- Run B3 and compare with the tuned B2.
+- Settle before any run: the keep rule for B3 (eval-side vs training-side OOF; with OOF, run `b2-007` first and use it as the reference) and what ADR-0002 allows for lab-derived signature channels. Record both in an ADR or a note on ADR-0002.
+- Install `iisignature` on Windows (`uv sync --extra signatures`). Fallback: a small NumPy signature for depth <= 3, tested against `iisignature` (or `esig`) on toy paths.
+- Register signatures as blocks in `BLOCKS` and `configs/features.yaml` (off by default), so the leakage suite and the batch = hour-by-hour test cover them; keep or remove `features.signatures` in experiment configs (decide in the plan).
+- Window: rows ending at t (ADR-0005), starting from the code's 8 rows, padded from the first available row, never rows > t. Lead-lag, then a truncated (log-)signature; depth 2 and 3 are config values.
+- `b3-001` vital channels (ADR-0002 allows them): `MAP`, `HR`, `Resp`, `shock_index` with a time channel, plus cumulative-sum and lead-lag signatures of the vitals. One change from `b2-001`.
+- `b3-002` the paper's channels `partial_sofa, MAP, bun_cr` with a time channel, only if the ADR-0002 decision allows lab-derived channels.
+- `b3-003` (optional) the depth or window change the better of the first two suggests. Never labs in the cumulative-sum set; no `SaO2/FiO2`; `O2Sat/FiO2` only if ADR-0002 allows it, as its own run.
+- Noise: rerun `b2-001` and the best B3 run with 2 more seeds each (seed changes masking and LightGBM); report each column's mean and spread.
+- Run `sepsis.eval.importance` on the best B3 run: where the signature columns rank and any that flip direction between A → B and B → A.
+- Record the feature-build time, the run time and the replay slowdown (`features_at` runs every hour in M5/M6).
 Acceptance:
-- The no-future and masking tests pass for the new features.
-- A LOG row with all three setups exists, and the keep/drop decision is recorded. Keep B3 only if it beats B2 on mix without hurting A → B or B → A (the rank 1 team blamed their hospital C failure partly on overfitting local patterns).
+- The leakage suite (no future rows, masking, batch = hour by hour) passes for every signature block, and `leakage-reviewer` has checked every lab-derived channel against ADR-0002.
+- Every B3 run and seed repeat has a LOG row with all three setups.
+- Keep B3 only if the mean of mix → A and mix → B rises above the reference by more than the seed spread and neither A → B nor B → A drops by more than `selection.cross_hospital_tolerance` (rank #1 blamed their hospital C failure partly on overfitting local patterns). The decision and its numbers go in a short report under `docs/experiments/`.
 
 ## M5: Replay | ALL reproduces B2's full-information utility; NONE uses zero labs
 
