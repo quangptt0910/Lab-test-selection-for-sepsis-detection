@@ -10,7 +10,7 @@ It is validated by **replaying** patient records with labs hidden until the syst
 Domain vocabulary: @CONTEXT.md · Decisions: `docs/adr/` · How we work: `docs/WORKFLOW.md`
 
 ## Commands
-- Setup: `uv sync` (add `--extra signatures` for signature features)
+- Setup: `uv sync` (`--extra signatures` only adds `iisignature` for an optional cross-check test)
 - Fast check, run after every change: `make check` (ruff + `pytest -m "not slow"`). Without `make` (Windows):
   `uv run ruff check src tests; uv run ruff format --check src tests; uv run pytest -q -m "not slow"`
 - Full tests: `make test`
