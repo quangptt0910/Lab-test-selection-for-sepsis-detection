@@ -70,6 +70,10 @@ Shared vocabulary for code, docs, tickets and prompts. If a term changes, change
 - **Feature cache**: the training and evaluation feature tables and targets of an experiment, stored as parquet under `data/cache/features/` and keyed by everything that shapes them, configs and code included.
 - **Partial run**: a run of fewer than all three setups. Its LOG row has `—` for setups not run and is never used to keep a change.
 - **Ordering diagnostic**: analysis only (M3-3). B2 is run with and without lab-count and just-revealed columns (`n_revealed_<lab>`, `revealed_now_<lab>`, taken from what the view can show) at `lab_masking_p = 0`, under A → B and B → A, to measure how much utility ordering behaviour carries. ADR-0002 forbids these columns in every model; they are in no config or feature block, and the result goes into a report, never into the LOG.
+- **Seed repeat**: a run of the same experiment config with only `id`, `seed`, `hypothesis` and `note` changed. The seed changes the panel-draw masking and the model; patients and folds stay fixed.
+- **Mix mean**: (mix → A + mix → B) / 2 of one run. The keep decision is made on its mean over seed repeats.
+- **Seed spread**: max − min of a figure over a group's seed repeats: the run-to-run noise. The larger mix-mean seed spread of the two groups is the keep margin.
+- **Keep decision**: `keep`, `drop` or `undecided` for a candidate change against a reference, from their seed repeats (`sepsis.eval.compare`, ADR-0008). `undecided`: fewer than `selection.min_seeds` seeds on a side, or no seed spread.
 - **Threshold grid**: the candidate thresholds for tuning: observed out-of-fold scores of the training side at evenly spaced quantiles (`configs/eval.yaml`).
 
 ## Guideline layer

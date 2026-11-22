@@ -17,6 +17,7 @@ Domain vocabulary: @CONTEXT.md · Decisions: `docs/adr/` · How we work: `docs/W
 - Official score: `uv run python third_party/evaluate_sepsis_score.py <labels_dir> <pred_dir> <out.psv>`. Utility is the 5th value.
 - Experiments: use the `run-experiment` skill, not ad-hoc scripts. It calls
   `uv run python -m sepsis.eval.run_experiment configs/<name>.yaml` (ADR-0008).
+- Keep or drop a change: the `compare-runs` skill (`uv run python -m sepsis.eval.compare --reference <ids> --candidate <ids>`), over seed repeats. Numbers in experiment reports come from its output.
 
 ## Layout
 `src/sepsis/` holds `data/` (load .psv, splits), `features/` (builder, vitals, labs, clinical, signatures), `labels/` (utility targets), `risk/`, `action/`, `guideline/` (engine + `rules/*.yaml`), `replay/`, `eval/`.
