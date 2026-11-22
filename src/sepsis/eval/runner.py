@@ -237,7 +237,12 @@ def red_flags(results: Mapping[str, SetupResult], limits: Mapping[str, float]) -
 
     `limits` is the `red_flags` section of configs/protocol.yaml.
     """
-    s = four_scores(results)
+    return flags_from_scores(four_scores(results), limits)
+
+
+def flags_from_scores(s: Mapping[str, Scores | None], limits: Mapping[str, float]) -> list[str]:
+    """`red_flags` from the four results by LOG name (`four_scores`); also used by
+    `sepsis.eval.compare` on finished run folders."""
     max_auroc, max_gap = limits["max_auroc"], limits["max_direction_gap"]
     flags = [
         f"red flag: {name} AUROC {v.auroc:.3f} > {max_auroc}"

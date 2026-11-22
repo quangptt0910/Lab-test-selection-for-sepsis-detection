@@ -19,13 +19,13 @@ Your job is the checks around it and the judgment after it. Never run experiment
    - `git status` is clean, or the user agreed to log a dirty tree (`--allow-dirty`; the SHA then ends in `-dirty`). `experiments/LOG.md` and untracked configs don't count.
    - `make check` passes (on Windows without `make`, the three `uv run` commands in `CLAUDE.md`). If not, stop and report.
    - The model type is registered in `sepsis.risk.base.MODELS`.
-2. **Run** `uv run python -m sepsis.eval.run_experiment $ARGUMENTS` (add `--no-cache` only to force a rebuild of the feature tables). Expect about 37 model fits for a full run. Partial runs (fewer setups) are logged with `—` and the note "partial run: not comparable".
+2. **Run** `uv run python -m sepsis.eval.run_experiment $ARGUMENTS` (add `--no-cache` only to force a rebuild of the feature tables; with the signature blocks on, add `--jobs 1` or `--jobs 2`: three parallel setups ran this machine out of memory). Expect about 37 model fits for a full run. Partial runs (fewer setups) are logged with `—` and the note "partial run: not comparable".
 3. **Read the outputs.** The run folder `experiments/runs/<id>/` holds `scores.json`, per-setup `thresholds.json`, `threshold_curve.csv`, `folds.csv` and `predictions.parquet`, and `meta.json`. The runner prints the scores, the new LOG row and any red flags.
-4. **Compare** with the best previous row of the same kind, on all four columns. Say plainly whether the hypothesis held. A change is kept only if mix improves without A→B or B→A dropping by more than `selection.cross_hospital_tolerance` in `configs/protocol.yaml`, and never on a partial run. Report the gap between mix and cross-hospital results.
+4. **Compare** with the best previous row of the same kind, on all four columns. Say plainly whether the hypothesis held, and report the gap between mix and cross-hospital results. One run is a screening result: a keep or drop decision needs seed repeats and the `compare-runs` skill, which applies the rule over seeds (`selection` in `configs/protocol.yaml`). Never keep a partial run.
 5. **Report** to the user: the command run, the scores it printed, and the new LOG row. No metric without its command output.
 
 Red flags. Stop and suspect leakage, then ask the leakage-reviewer subagent. The limits are in the `red_flags` section of `configs/protocol.yaml`. The runner writes the first three into the LOG note; the fourth needs your comparison:
 - AUROC above `max_auroc` (0.95) in any setup.
 - A→B and B→A differ by more than `max_direction_gap` (0.15).
 - A cross-hospital result beats the mix result for the same evaluated hospital (A→B above mix→B, or B→A above mix→A). Mix trains on that hospital, so it should be the easier setting; this points to a bug.
-- Utility jumps by more than `max_utility_jump` (0.05) from one small change.
+- Utility jumps by more than `max_utility_jump` (0.05) from one small change (`compare-runs` checks this against the reference run with the same seed).
