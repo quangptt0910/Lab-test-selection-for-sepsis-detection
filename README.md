@@ -70,6 +70,10 @@ Paths are in `configs/data.yaml`, split settings in `configs/protocol.yaml`, cle
    ```bash
    python -m sepsis.replay.run_policies configs/replay_b2.yaml
    ```
+7. Build the VoI training targets (M6-1). `configs/voi.yaml` names the source run, the horizons, the decision-row spacing and the panel costs. The CLI refits the source run's inner (out-of-fold) models, checks them against the run, and for every decision row and panel compares the alarm with and without that panel's request (ADR-0010). It writes one parquet per setup under `data/cache/voi/<key>/` and prints a summary; no LOG row.
+   ```bash
+   python -m sepsis.labels.build_voi configs/voi.yaml
+   ```
 
 ## Test and lint
 Run these after every change:

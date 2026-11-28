@@ -17,7 +17,8 @@
 # section 2), A / B: core routine labs (BUN, Creatinine, WBC, Platelets, Hgb, PTT, ...) 23-27 in
 # each hospital -> 24. Lactate 12 / 12 -> 12. pH, PaCO2, SaO2 9-10 / 14-15 -> 12, deliberately
 # short so a stale blood gas is not returned as new. Exceptions are listed in ADR-0006.
-# provenance: project_assumption (no clinical source cited yet). Costs are set in M6, not here.
+# provenance: project_assumption (no clinical source cited yet). Panel costs are in
+# configs/voi.yaml (M6-1, ADR-0010), not here: this file is part of every feature-cache key.
 
 reveal_delay_rows: 1   # requested at row t (after the risk at t), visible from row t + 1; must be >= 1
 

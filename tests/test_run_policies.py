@@ -9,7 +9,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 import yaml
-from runner_toy import experiment
+from runner_toy import LOG_HEADER, experiment
 from test_runner import CLEAN, _main, shared, toy  # noqa: F401  (pytest fixtures)
 
 import sepsis.replay.run_policies as cli
@@ -120,11 +120,10 @@ def test_writes_one_run_folder_and_one_log_row_per_policy(toy) -> None:  # noqa:
         for line in _log(toy).read_text(encoding="utf-8").splitlines()
         if line.startswith("| id")
     )
-    rows = {
-        line.split("|")[1].strip(): line
-        for line in _log(toy).read_text(encoding="utf-8").splitlines()
-        if line.startswith("| r-")
-    }
+    # Only the rows this run appended: the toy LOG starts as a copy of the real one, which holds
+    # real replay rows (r-...-001) since M5-2.
+    appended = _log(toy).read_text(encoding="utf-8").splitlines()[len(LOG_HEADER.splitlines()) :]
+    rows = {line.split("|")[1].strip(): line for line in appended if line.startswith("| r-")}
     assert set(rows) == set(IDS.values()) <= logged_ids(_log(toy))
     for policy, run_id in IDS.items():
         folder = _runs(toy) / run_id
