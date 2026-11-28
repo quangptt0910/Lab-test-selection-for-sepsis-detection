@@ -41,3 +41,21 @@ Building one patient's view and features hour by hour (`view_at` + `features_at`
   - Estimated for all dev patients: about 5 min (NONE) to 12 min (ALL) per replay.
   - If M6 policies need it, view rows can be built incrementally, because a view row never changes once its hour has passed. That would need a second implementation of the view, checked by the same equivalence test.
 - Policies that order in a pattern (ALL, NONE, AS_RECORDED) could skip the loop and use a fixed reveal table, but they go through the same engine, so every policy is measured the same way.
+
+## Amendment (M5-2): baseline policies, burden figures and the M5 check
+Code in `sepsis.action.baselines` (NONE, ALL), `sepsis.replay.baselines` (AS_RECORDED) and the CLI `sepsis.replay.run_policies`.
+
+1. **The record exception: `bind`.** AS_RECORDED requests panel P at row t iff the record has a value of one of P's labs at row t, so it must read the record. It is the only policy that does, by design.
+   - It sets `needs_record = True`. Before the first hour, `replay()` calls `policy.bind(draws)` once, and only for such policies.
+   - `draws` holds `patient_id, hour` and the lab columns of the cleaned record, under the per-replay codes. It never holds `SepsisLabel`, the hospital, the vitals or the real ids.
+   - AS_RECORDED lives in `sepsis.replay`, outside `sepsis.action`, so the import guard still holds. A test checks that no class in `sepsis.action` sets `needs_record`.
+2. **Counting unit.** Labs per patient-day counts panel requests (§6): one request is one order, `unavailable` and `nothing_new` included. ALL is therefore 7 × 24 = 168 per patient-day.
+3. **Request status shares.** `unavailable_rate` and `nothing_new_rate` are each status's share of all requests (`request_shares`), per setup and per hospital for mix. With no requests (NONE) both are `None`, never 0/0.
+4. **The M5 check is hard.** `run_policies` refits the source run's models once per setup, replays every policy with them, scores with the official scorer, and then checks:
+   - ALL has the same `patient_id, hour` rows as the source run's scored predictions in every setup, its scores agree within 1e-9, and its alarms are identical;
+   - ALL's four utilities equal the source `scores.json` exactly;
+   - NONE logged no request;
+   - AS_RECORDED's predictions equal ALL's by the same comparison, and every AS_RECORDED request has status `revealed` (so its burden is not inflated).
+
+   The source run must be in the LOG, not only on disk. If any of these fails, the CLI exits non-zero, writes no LOG row and leaves the run folders as `<id>.partial`.
+5. **Consequence: AS_RECORDED equals ALL.** With `reveal_delay_rows: 1`, AS_RECORDED reveals each value at its recorded row + 1. That is the as-recorded view, which is exactly what ALL reveals. So AS_RECORDED has ALL's predictions and utility at a far lower burden, and every request it makes reveals something (no `unavailable` or `nothing_new`). Its labs per patient-day is the clinicians' burden that a learned policy (M6) has to beat at equal utility. A difference between AS_RECORDED and ALL is a bug.

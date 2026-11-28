@@ -1,0 +1,8 @@
+# M5-2: the baseline policies replayed on the reference B2 run (ADR-0009).
+#   uv run python -m sepsis.replay.run_policies configs/replay_b2.yaml
+source_run: b2-001          # experiments/runs/<source_run>/ must exist
+policies:                   # policy name -> new run id (never reused)
+  NONE: r-none-001
+  ALL: r-all-001
+  AS_RECORDED: r-asrec-001
+note: "M5-2 baseline policies"

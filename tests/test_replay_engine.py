@@ -9,6 +9,8 @@ import pandas as pd
 import pytest
 from feature_toy import toy_record
 
+from sepsis.action.baselines import AllPolicy
+from sepsis.action.baselines import NonePolicy as BaseNone
 from sepsis.action.policy import Step
 from sepsis.config import CLEANING_CONFIG, FEATURES_CONFIG, load_yaml
 from sepsis.data.clean import clean
@@ -71,22 +73,15 @@ class RulePolicy:
         return {pid: _choose(rows.loc[pid], float(s)) for pid, s in step.scores.items()}
 
 
-class AllPolicy:
-    name = "ALL"
-
-    def decide(self, step: Step) -> dict[str, frozenset[str]]:
-        return {pid: frozenset(PANEL_NAMES) for pid in step.scores.index}
-
-
-class NonePolicy:
-    name = "NONE"
+class NonePolicy(BaseNone):
+    """NONE, recording the steps it saw."""
 
     def __init__(self) -> None:
         self.steps: list[Step] = []
 
     def decide(self, step: Step) -> dict[str, frozenset[str]]:
         self.steps.append(step)
-        return {}
+        return super().decide(step)
 
 
 def _replay(hours: pd.DataFrame, policy, model=None, threshold: float = THRESHOLD) -> ReplayResult:

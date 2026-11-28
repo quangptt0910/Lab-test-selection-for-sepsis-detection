@@ -22,7 +22,7 @@ from sepsis.action.policy import Policy, Step
 from sepsis.data.clean import clean
 from sepsis.data.view import KEYS, validate_reveal_rows, view_table
 from sepsis.features.builder import build_features
-from sepsis.replay.reveal import REQUEST_COLUMNS, RevealState
+from sepsis.replay.reveal import NOTHING_NEW, REQUEST_COLUMNS, UNAVAILABLE, RevealState
 from sepsis.risk.base import RiskModel
 
 PREDICTION_COLUMNS = ["patient_id", "hour", "score", "alarm"]
@@ -57,6 +57,10 @@ def replay(
     real_of = {f"p{i:06d}": pid for i, pid in enumerate(real_ids)}
     record = record.assign(patient_id=[f"p{i:06d}" for i in codes])
     state = RevealState(record, panels_config)
+    if getattr(policy, "needs_record", False):
+        # The one record exception (AS_RECORDED, ADR-0009 amendment): the cleaned lab columns
+        # under the per-replay codes, never SepsisLabel, the hospital or the real ids.
+        policy.bind(record[[*KEYS, *state.labs]].copy())  # type: ignore[attr-defined]
     columns = list(feature_columns)
     hour = record["hour"].to_numpy()
     length = record.groupby("patient_id", sort=False)["hour"].transform("size").to_numpy()
@@ -108,3 +112,17 @@ def labs_per_patient_day(requests: pd.DataFrame, predictions: pd.DataFrame) -> f
     """
     patient_days = len(predictions) / 24
     return float(len(requests) / patient_days) if patient_days else 0.0
+
+
+def request_shares(requests: pd.DataFrame) -> dict[str, float | None]:
+    """The share of all panel requests that were `unavailable` and `nothing_new` (ADR-0009).
+
+    None for both when nothing was requested (NONE), never 0/0. Pass one hospital at a time.
+    """
+    if requests.empty:
+        return {"unavailable_rate": None, "nothing_new_rate": None}
+    status = requests["status"]
+    return {
+        "unavailable_rate": float((status == UNAVAILABLE).mean()),
+        "nothing_new_rate": float((status == NOTHING_NEW).mean()),
+    }
