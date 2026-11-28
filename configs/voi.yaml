@@ -1,0 +1,24 @@
+# Value-of-information targets and panel costs (M6-1, ADR-0010). Read by sepsis.labels.voi.
+#
+#   uv run python -m sepsis.labels.build_voi configs/voi.yaml
+#
+# Targets are built on the training side of every setup of `source_run`, scored by its inner
+# (out-of-fold) models with each setup's frozen threshold. Views are as recorded, unmasked.
+
+source_run: b2-001
+horizons: [1, 6, 12]       # rows after the decision row summed into gain_h<h>; the largest is built
+decision_every_rows: 12    # one decision row every 12 rows per patient, from a seeded offset
+seed: 0                    # the decision-row offsets (per patient: rng([seed, crc32(patient_id)]))
+chunk_patients: 2000       # patients per feature-building chunk (memory only; no effect on targets)
+
+# Relative cost of one request of each panel. M6-3 sweeps one scale over these, so only the
+# ratios matter. Not in panels.yaml: that file is in every feature-cache key (ADR-0010 §8).
+costs:
+  LACTATE: 1
+  ABG: 1
+  CHEM: 1
+  CBC: 1
+  LFT: 1
+  COAG: 1
+  TROPONIN: 1
+provenance: project_assumption  # equal costs; price-based ratios need a cited fee schedule

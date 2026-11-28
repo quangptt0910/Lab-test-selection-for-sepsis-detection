@@ -40,6 +40,7 @@ class Refit:
     keys: pd.DataFrame  # patient_id, hour of those rows
     scores: np.ndarray
     outer_fold: int | None = None  # mix only
+    inner_fold: int | None = None  # an inner (out-of-fold) model only, `refit_inner`
 
 
 def load_run(run_dir: Path) -> tuple[dict[str, Any], dict[str, Any] | None]:
@@ -73,8 +74,37 @@ def refit_plan(
 
     Cross-hospital setups have one plan; mix has one per outer fold (replay, M5-1).
     """
+    return _fit(cfg, preprocessing, tables, plan.refit, plan.scored, plan, None)
+
+
+def refit_inner(
+    cfg: Mapping[str, Any],
+    preprocessing: Mapping[str, Any] | None,
+    tables: Tables,
+    plan: FoldPlan,
+    inner_fold: int,
+) -> Refit:
+    """Fit the run's inner model of `inner_fold` and score the patients it held out: the
+    out-of-fold scores the run tuned its threshold on (VoI targets, M6-1)."""
+    inner = {int(fold): (fit, oof) for fold, fit, oof in plan.inner}
+    if int(inner_fold) not in inner:
+        raise ValueError(f"{plan.setup}: no inner fold {inner_fold} in this plan")
+    fit_ids, oof_ids = inner[int(inner_fold)]
+    return _fit(cfg, preprocessing, tables, fit_ids, oof_ids, plan, int(inner_fold))
+
+
+def _fit(
+    cfg: Mapping[str, Any],
+    preprocessing: Mapping[str, Any] | None,
+    tables: Tables,
+    fit_ids: tuple[str, ...],
+    scored_ids: tuple[str, ...],
+    plan: FoldPlan,
+    inner_fold: int | None,
+) -> Refit:
+    """The runner's fit: training-view rows of `fit_ids`, evaluation-view rows scored."""
     index = PatientIndex.of(tables)
-    fit_rows, scored_rows = index.rows(plan.refit), index.rows(plan.scored)
+    fit_rows, scored_rows = index.rows(fit_ids), index.rows(scored_ids)
     model = model_factory(cfg, preprocessing)()
     targets = tables.targets
     model.fit(
@@ -85,7 +115,15 @@ def refit_plan(
     X_eval = tables.eval_X.loc[scored_rows, tables.feature_columns]
     scores = np.asarray(model.predict(X_eval), dtype=float)
     keys = targets.loc[scored_rows, KEYS].reset_index(drop=True)
-    return Refit(plan.setup, model, X_eval.reset_index(drop=True), keys, scores, plan.outer_fold)
+    return Refit(
+        plan.setup,
+        model,
+        X_eval.reset_index(drop=True),
+        keys,
+        scores,
+        plan.outer_fold,
+        inner_fold,
+    )
 
 
 def check_against_run(refit: Refit, run_dir: Path) -> None:
@@ -95,7 +133,25 @@ def check_against_run(refit: Refit, run_dir: Path) -> None:
     scored = predictions[predictions["kind"] == "scored"]
     if refit.outer_fold is not None:
         scored = scored[scored["outer_fold"] == refit.outer_fold]
-    scored = scored.sort_values(KEYS)
+    _compare(refit, scored)
+
+
+def check_oof_against_run(refit: Refit, run_dir: Path) -> None:
+    """Raise unless an inner refit's scores equal the run's stored out-of-fold predictions of
+    that inner fold (and outer fold, for mix)."""
+    if refit.inner_fold is None:
+        raise ValueError("check_oof_against_run needs an inner refit (`refit_inner`)")
+    predictions = pd.read_parquet(Path(run_dir) / refit.setup / "predictions.parquet")
+    oof = predictions[
+        (predictions["kind"] == "oof") & (predictions["inner_fold"] == refit.inner_fold)
+    ]
+    if refit.outer_fold is not None:
+        oof = oof[oof["outer_fold"] == refit.outer_fold]
+    _compare(refit, oof)
+
+
+def _compare(refit: Refit, stored: pd.DataFrame) -> None:
+    scored = stored.sort_values(KEYS)
     mine = refit.keys.assign(score=refit.scores).sort_values(KEYS)
     if not scored[KEYS].reset_index(drop=True).equals(mine[KEYS].reset_index(drop=True)):
         raise ValueError(f"{refit.setup}: the refit scores other rows than the run")

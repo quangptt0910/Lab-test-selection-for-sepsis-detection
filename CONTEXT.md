@@ -39,7 +39,11 @@ Shared vocabulary for code, docs, tickets and prompts. If a term changes, change
 ## Models
 - **Risk model**: maps the feature row built from the view at t to a risk score (higher means more likely to alarm). Every model follows one interface, `fit(X, y, sample_weight)` and `predict(X) -> raw score` (`sepsis.risk.base`, ADR-0008).
 - **Alarm**: the risk score exceeds the frozen threshold (`score > threshold`, strictly). This is what the utility scores.
-- **Action model / VoI**: estimates the value of information of each panel: how much revealing it would change the risk or the alarm decision.
+- **Action model / VoI**: estimates the value of information of each panel: how much revealing it would change the risk or the alarm decision (ADR-0010).
+- **VoI target**: for one patient, decision row t and panel P, the utility the request would change: Σ over s = t+1 … t+h of (U1 − U0)_s × (alarm_with − alarm_without), h = 1, 6 or 12 (`gain_h<h>`). *Without*: P's values in its look-back window and after t hidden; *with*: the window's values revealed at t + 1. Both as recorded, unmasked, scored out-of-fold with the frozen threshold. Built by `sepsis.labels.voi`; a label, never a feature.
+- **Decision row**: a row t that gets VoI targets: every 12 rows per patient from a seeded offset, t ≤ n − 2.
+- **Available (panel)**: the record has a value of the panel in its look-back window ending at the decision row, so a request would reveal something. Where not available the gain is NaN in the target table (its replay value is exactly 0) and kept apart from the gain (ADR-0010 §4).
+- **Panel cost**: the relative cost of one request of a panel (`configs/voi.yaml`, all 1 for now, `project_assumption`); M6-3 sweeps a scale over them.
 - **WAIT**: no panel's VoI exceeds its cost.
 - **B0–B3**: baseline ladder, registered in `sepsis.risk.base.MODELS`. B0 `rule_score`: a fixed weighted sum of SIRS count and PartialSOFA with a tuned threshold. B1 `logistic`: logistic regression on `sepsis_label` with the ADR-0005 fills, score = log-odds. B2 `lightgbm_regressor`: LightGBM on U1 − U0. B3: B2 + signatures.
 
