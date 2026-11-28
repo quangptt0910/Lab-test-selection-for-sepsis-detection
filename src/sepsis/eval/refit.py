@@ -136,24 +136,78 @@ def check_against_run(refit: Refit, run_dir: Path) -> None:
     _compare(refit, scored)
 
 
-def check_oof_against_run(refit: Refit, run_dir: Path) -> None:
+@dataclass(frozen=True)
+class RefitTolerance:
+    """How far an inner refit may differ from the run's stored scores and still count as the
+    run's model (ADR-0010 §6): float-level split ties across machines, never another decision.
+
+    Rows differing by more than `atol` are "off"; they may be at most `max_share_off` of the rows,
+    none may differ by more than `max_abs_diff`, and every alarm under the frozen threshold must
+    be identical.
+    """
+
+    atol: float
+    max_share_off: float
+    max_abs_diff: float
+
+
+def check_oof_against_run(
+    refit: Refit,
+    run_dir: Path,
+    *,
+    threshold: float | None = None,
+    tolerance: RefitTolerance | None = None,
+) -> dict[str, float]:
     """Raise unless an inner refit's scores equal the run's stored out-of-fold predictions of
-    that inner fold (and outer fold, for mix)."""
+    that inner fold (and outer fold, for mix): within 1e-9, or within `tolerance` with identical
+    alarms under `threshold`. Returns `rows`, `rows_off` and `max_abs_diff`."""
     if refit.inner_fold is None:
         raise ValueError("check_oof_against_run needs an inner refit (`refit_inner`)")
+    if tolerance is not None and threshold is None:
+        raise ValueError("a tolerance needs the frozen threshold, to compare the alarms")
     predictions = pd.read_parquet(Path(run_dir) / refit.setup / "predictions.parquet")
     oof = predictions[
         (predictions["kind"] == "oof") & (predictions["inner_fold"] == refit.inner_fold)
     ]
     if refit.outer_fold is not None:
         oof = oof[oof["outer_fold"] == refit.outer_fold]
-    _compare(refit, oof)
+    if tolerance is None:
+        _compare(refit, oof)
+        return {"rows": len(oof), "rows_off": 0, "max_abs_diff": 0.0}
+    stored, mine = _aligned(refit, oof)
+    where = f"{refit.setup} outer {refit.outer_fold} inner {refit.inner_fold}"
+    diff = np.abs(stored - mine)
+    off = int((diff > tolerance.atol).sum())
+    largest = float(diff.max()) if len(diff) else 0.0
+    report = {"rows": len(diff), "rows_off": off, "max_abs_diff": largest}
+    flips = int(((stored > threshold) != (mine > threshold)).sum())
+    if flips:
+        raise ValueError(
+            f"{where}: the refit does not reproduce the run's scores: {flips} alarm(s) differ"
+        )
+    if off > tolerance.max_share_off * len(diff):
+        raise ValueError(
+            f"{where}: the refit does not reproduce the run's scores: {off} of {len(diff)} rows "
+            f"differ by more than {tolerance.atol}"
+        )
+    if largest > tolerance.max_abs_diff:
+        raise ValueError(
+            f"{where}: the refit does not reproduce the run's scores: max |diff| {largest:.3g} > "
+            f"{tolerance.max_abs_diff}"
+        )
+    return report
 
 
-def _compare(refit: Refit, stored: pd.DataFrame) -> None:
+def _aligned(refit: Refit, stored: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+    """The stored and refit scores on the same rows, in the same order; raise if the rows differ."""
     scored = stored.sort_values(KEYS)
     mine = refit.keys.assign(score=refit.scores).sort_values(KEYS)
     if not scored[KEYS].reset_index(drop=True).equals(mine[KEYS].reset_index(drop=True)):
         raise ValueError(f"{refit.setup}: the refit scores other rows than the run")
-    if not np.allclose(scored["score"].to_numpy(), mine["score"].to_numpy(), rtol=0, atol=1e-9):
+    return scored["score"].to_numpy(dtype=float), mine["score"].to_numpy(dtype=float)
+
+
+def _compare(refit: Refit, stored: pd.DataFrame) -> None:
+    scored, mine = _aligned(refit, stored)
+    if not np.allclose(scored, mine, rtol=0, atol=1e-9):
         raise ValueError(f"{refit.setup}: the refit does not reproduce the run's scores")

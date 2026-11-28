@@ -99,6 +99,9 @@ def test_the_voi_config_names_every_panel_with_a_positive_cost() -> None:
         {"horizons": [0, 6]},
         {"horizons": [12, 6]},
         {"decision_every_rows": 0},
+        {"refit_check": {**VOI["refit_check"], "max_share_off": 1.5}},
+        {"refit_check": {**VOI["refit_check"], "atol": 0}},
+        {"refit_check": {k: v for k, v in VOI["refit_check"].items() if k != "max_abs_diff"}},
         {"surprise": 1},
     ],
 )

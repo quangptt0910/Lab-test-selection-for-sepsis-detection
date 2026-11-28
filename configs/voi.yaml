@@ -11,6 +11,14 @@ decision_every_rows: 12    # one decision row every 12 rows per patient, from a 
 seed: 0                    # the decision-row offsets (per patient: rng([seed, crc32(patient_id)]))
 chunk_patients: 2000       # patients per feature-building chunk (memory only; no effect on targets)
 
+# How far a refit inner model may differ from the source run's stored out-of-fold scores
+# (ADR-0010 §6). Float-level split ties across machines and library versions move a few rows by a
+# constant; any alarm change, more rows or a larger difference still stops the build.
+refit_check:
+  atol: 1.0e-9         # rows differing by more than this are "off"
+  max_share_off: 0.001 # at most 0.1% of a model's rows may be off
+  max_abs_diff: 0.01   # and none by more than this
+
 # Relative cost of one request of each panel. M6-3 sweeps one scale over these, so only the
 # ratios matter. Not in panels.yaml: that file is in every feature-cache key (ADR-0010 §8).
 costs:

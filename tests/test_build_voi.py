@@ -3,6 +3,7 @@
 Runs on the toy project of the runner tests (no real patient data).
 """
 
+import json
 import re
 from pathlib import Path
 
@@ -175,3 +176,12 @@ def test_changed_source_run_outputs_are_not_served_from_the_cache(built, monkeyp
     monkeypatch.setattr(cli, "refit_inner", recomputed)
     with pytest.raises(AssertionError, match="recomputed"):
         _run(project, _config(project, source))
+
+
+def test_meta_records_the_refit_check_of_every_inner_model(built) -> None:
+    _, _, out_dir, _ = built
+    meta = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
+    checks = meta["refit_check"]
+    assert len(checks) == meta["inner_models"] == 5 + 5 + 5 * 4  # A_to_B, B_to_A, mix
+    assert all(c["rows_off"] == 0 and c["rows"] > 0 for c in checks)  # same machine: exact
+    assert meta["config"]["refit_check"] == VOI["refit_check"]

@@ -36,9 +36,11 @@ CONFIG_KEYS = {
     "decision_every_rows",
     "seed",
     "chunk_patients",
+    "refit_check",
     "costs",
     "provenance",
 }
+REFIT_CHECK_KEYS = ("atol", "max_share_off", "max_abs_diff")
 DECISION_KEYS = ["patient_id", "t"]
 TARGET_STATS = ["dscore_t1", "score_without_t1", "alarm_without_t1"]
 
@@ -55,6 +57,7 @@ class VoiConfig:
     decision_every_rows: int
     seed: int
     chunk_patients: int
+    refit_check: dict[str, float]  # atol, max_share_off, max_abs_diff
     costs: dict[str, float]
     provenance: str
 
@@ -86,12 +89,22 @@ def load_voi_config(raw: Mapping[str, Any]) -> VoiConfig:
     seed = raw["seed"]
     if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
         raise ValueError(f"seed must be a non-negative integer, got {seed!r}")
+    check = raw["refit_check"]
+    if not isinstance(check, Mapping) or set(check) != set(REFIT_CHECK_KEYS):
+        raise ValueError(f"refit_check needs exactly the keys {list(REFIT_CHECK_KEYS)}")
+    for name in REFIT_CHECK_KEYS:
+        value = check[name]
+        if isinstance(value, bool) or not isinstance(value, int | float) or not value > 0:
+            raise ValueError(f"refit_check.{name} must be a positive number, got {value!r}")
+    if check["max_share_off"] >= 1:
+        raise ValueError("refit_check.max_share_off is a share of rows, below 1")
     return VoiConfig(
         source_run=str(raw["source_run"]),
         horizons=horizons,
         decision_every_rows=_positive_int(raw["decision_every_rows"], "decision_every_rows"),
         seed=seed,
         chunk_patients=_positive_int(raw["chunk_patients"], "chunk_patients"),
+        refit_check={name: float(check[name]) for name in REFIT_CHECK_KEYS},
         costs={name: float(costs[name]) for name in PANEL_NAMES},
         provenance=str(raw["provenance"]),
     )

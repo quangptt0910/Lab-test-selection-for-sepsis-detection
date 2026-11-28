@@ -35,7 +35,7 @@ from sepsis.config import load_yaml
 from sepsis.data.clean import clean
 from sepsis.data.panels import PANEL_NAMES
 from sepsis.eval import run_experiment
-from sepsis.eval.refit import check_oof_against_run, load_run, refit_inner
+from sepsis.eval.refit import RefitTolerance, check_oof_against_run, load_run, refit_inner
 from sepsis.eval.run_experiment import (
     LOG_PATH,
     RUNS_DIR,
@@ -89,28 +89,37 @@ def voi_scorers(
     cfg: Mapping[str, Any],
     preprocessing: Mapping[str, Any] | None,
     dev: run_experiment.DevData,
-) -> list[Scorer]:
+    tolerance: RefitTolerance,
+) -> tuple[list[Scorer], list[dict[str, Any]]]:
     """Every inner model of every setup of the run, refit and checked against its stored
-    out-of-fold predictions, with the frozen threshold of its plan."""
-    scorers = []
+    out-of-fold predictions (within `tolerance`, alarms identical), with the frozen threshold of
+    its plan. Also returns the check's report per model."""
+    scorers, reports = [], []
     for setup in cfg["split"]["setups"]:
         entries = json.loads((run_dir / setup / "thresholds.json").read_text(encoding="utf-8"))
         frozen = {_fold(e["outer_fold"]): float(e["threshold"]) for e in entries}
         for plan in plan_setup(dev.split, setup):
             for fold, _fit_ids, oof_ids in plan.inner:
                 refit = refit_inner(cfg, preprocessing, dev.tables, plan, fold)
-                check_oof_against_run(refit, run_dir)  # raises unless it is the run's model
+                threshold = frozen[_fold(plan.outer_fold)]
+                report = check_oof_against_run(  # raises unless it is the run's model
+                    refit, run_dir, threshold=threshold, tolerance=tolerance
+                )
+                reports.append(
+                    {"setup": setup, "outer_fold": _fold(plan.outer_fold), "inner_fold": int(fold)}
+                    | report
+                )
                 scorers.append(
                     Scorer(
                         setup=setup,
                         outer_fold=_fold(plan.outer_fold),
                         inner_fold=int(fold),
                         model=refit.model,
-                        threshold=frozen[_fold(plan.outer_fold)],
+                        threshold=threshold,
                         ids=frozenset(oof_ids),
                     )
                 )
-    return scorers
+    return scorers, reports
 
 
 def voi_key(
@@ -290,8 +299,17 @@ def main(
 
     # 3. The run's inner models, checked.
     print("[voi] refitting the source run's inner models ...", flush=True)
-    scorers = voi_scorers(source_dir, source_cfg, preprocessing, dev)
+    tolerance = RefitTolerance(**cfg.refit_check)
+    scorers, checks = voi_scorers(source_dir, source_cfg, preprocessing, dev, tolerance)
     print(f"[voi] {len(scorers)} inner models reproduce the run's out-of-fold scores", flush=True)
+    for check in checks:
+        if check["rows_off"]:
+            print(
+                f"[voi]   within the tie tolerance: {check['setup']} outer {check['outer_fold']} "
+                f"inner {check['inner_fold']}: {check['rows_off']} of {check['rows']} rows, "
+                f"max |diff| {check['max_abs_diff']:.3g}, no alarm changed",
+                flush=True,
+            )
 
     # 4. Targets, chunk by chunk.
     settings = dev.settings
@@ -346,6 +364,7 @@ def main(
         "command": " ".join([Path(sys.argv[0]).name, *(argv or sys.argv[1:])]),
         "versions": run_experiment._versions(),
         "inner_models": len(scorers),
+        "refit_check": checks,
         "rows": {setup: len(table) for setup, table in tables.items()},
         "wall_seconds": round(time.perf_counter() - started, 1),
     }
