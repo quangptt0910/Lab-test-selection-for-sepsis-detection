@@ -46,10 +46,11 @@ Code: `sepsis.features.clinical`, `.vitals`, `.labs`; every threshold and window
 Cardiovascular scores 2–4 need vasopressor data, which this dataset doesn't have. Compare against the rank #1 code (`CanIgetyoursignature.zip`) before claiming parity.
 
 ## 3. Signatures (B3 only)
-- Library: `iisignature` (`uv sync --extra signatures`).
-- Sliding window ending at t (length from config, try 6–12 h), depth 2–3 (tune).
-- Rank #1 used: signatures of `[partial_sofa, MAP, bun_cr]` with a time channel; and signatures of non-stationary vitals after **cumulative sum then lead-lag**.
-- Pad windows shorter than the window length from the first available row. Never use rows > t.
+- Rank #1's paper: signatures of `[partial_sofa, MAP, bun_cr]` with a time channel, and of non-stationary vitals after **cumulative sum then lead-lag**. Their code: per-column log-signatures of order 3 after lead-lag on an 8-row path padded with the first value, channels `SOFA, BUN/CR, SaO2/FiO2`.
+- **[ours]** `sepsis.features.signatures`, own NumPy code to depth 3 (no dependency; `iisignature` is only an optional cross-check test). One 2-D path per channel: `time` (row position, value) or `cumsum_lead_lag` (running sum from 0, then lead-lag). Features are the tensor-log coefficients at the Lyndon words `1, 2, 12, 112, 122` (5 per channel at depth 3).
+- **[ours]** Window: the last `window_rows` rows ending at t (start: 8), padded with the first row at the stay start; a gap takes the latest earlier value in the window. Never use rows > t.
+- **[ours]** Channels: vitals, `shock_index`, `partial_sofa` only; cumulative sums take vitals only. `bun_cr`, `SaO2/FiO2` (SaO2 is excluded) and other labs are refused (ADR-0002: a forward-filled lab's steps are lab differences).
+- Blocks `sig_vitals`, `sig_vitals_cumsum`, `sig_partial_sofa` in the `signatures` section of `configs/features.yaml`, off by default; an experiment lists them in `features.signatures`.
 
 ## 4. Target: U1 − U0
 Implemented in `sepsis.labels.utility` (`utility_targets(hours, constants)` → `patient_id, hour, dt, u1, u0, utility_diff, weight`); constants in `configs/labels.yaml`, checked against the scorer's defaults by a test.

@@ -15,6 +15,10 @@ selection:
   # Keep a change only if mix improves and neither A->B nor B->A drops by more than this (utility).
   # project_assumption: fixed before the first comparison; do not change per experiment.
   cross_hospital_tolerance: 0.01
+  # Seeds per side before a keep or drop verdict (M4-1: one seed can't tell a +0.003 change from
+  # noise). Fewer: `sepsis.eval.compare` prints the tables and says undecided.
+  # project_assumption: set after M4-1, before the next comparison.
+  min_seeds: 3
 
 red_flags:
   # run-experiment warnings (ADR-0008): stop and suspect leakage when one fires.

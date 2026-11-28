@@ -10,13 +10,15 @@ It is validated by **replaying** patient records with labs hidden until the syst
 Domain vocabulary: @CONTEXT.md · Decisions: `docs/adr/` · How we work: `docs/WORKFLOW.md`
 
 ## Commands
-- Setup: `uv sync` (add `--extra signatures` for signature features)
+- Setup: `uv sync` (`--extra signatures` only adds `iisignature` for an optional cross-check test)
 - Fast check, run after every change: `make check` (ruff + `pytest -m "not slow"`). Without `make` (Windows):
   `uv run ruff check src tests; uv run ruff format --check src tests; uv run pytest -q -m "not slow"`
 - Full tests: `make test`
 - Official score: `uv run python third_party/evaluate_sepsis_score.py <labels_dir> <pred_dir> <out.psv>`. Utility is the 5th value.
 - Experiments: use the `run-experiment` skill, not ad-hoc scripts. It calls
   `uv run python -m sepsis.eval.run_experiment configs/<name>.yaml` (ADR-0008).
+- Replay the baseline policies on a finished run: `uv run python -m sepsis.replay.run_policies configs/replay_b2.yaml` (M5 check built in; ADR-0009).
+- Keep or drop a change: the `compare-runs` skill (`uv run python -m sepsis.eval.compare --reference <ids> --candidate <ids>`), over seed repeats. Numbers in experiment reports come from its output.
 
 ## Layout
 `src/sepsis/` holds `data/` (load .psv, splits), `features/` (builder, vitals, labs, clinical, signatures), `labels/` (utility targets), `risk/`, `action/`, `guideline/` (engine + `rules/*.yaml`), `replay/`, `eval/`.
@@ -59,3 +61,7 @@ Other top-level folders: `configs/`, `experiments/` (`LOG.md`, and gitignored `r
 - When you claim a metric or a passing test, show the command and its output.
 - Every experiment appends one row to `experiments/LOG.md`. Never edit past rows.
 - When compacting, preserve: modified files, current experiment id, latest metrics, open leakage concerns.
+
+## Git
+- IMPORTANT: ask the user and wait for a yes before every `git add`, `git commit` and `git push`. A yes covers only the step it was given for.
+- No `Co-Authored-By` or other Claude attribution lines in commit messages or PR descriptions.

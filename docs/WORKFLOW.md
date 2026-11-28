@@ -68,8 +68,9 @@ Use `/codebase-design` when a module's interface feels wrong, and `/pr` to write
 
 1. Write or copy a config in `configs/` (one hypothesis per config, e.g. "add PartialSOFA 24 h delta").
 2. `/run-experiment configs/<name>.yaml`
-3. Read the new `LOG.md` row. Keep the change only if the mix result improves and A → B and B → A don't drop by more than `selection.cross_hospital_tolerance` (`configs/protocol.yaml`), without a large AUROC drop.
-4. Record the decision in the config's `note` field or an ADR if it changes the default recipe.
+3. Read the new `LOG.md` row. It is one seed: use it to decide whether the change is worth seed repeats.
+4. For a keep or drop decision, run the seed repeats and the `compare-runs` skill. It keeps the change only if the mix mean over the seeds beats the reference by more than the seed spread, and A → B and B → A don't drop by more than `selection.cross_hospital_tolerance` (`configs/protocol.yaml`).
+5. Record the decision in the config's `note` field or an ADR if it changes the default recipe.
 
 ### Other skills worth knowing
 

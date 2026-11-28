@@ -66,6 +66,11 @@ With uv, prefix each command with `uv run`. Always use `-m`, not the file path (
 
 Paths are in `configs/data.yaml`, split settings in `configs/protocol.yaml`, cleaning rules in `configs/cleaning.yaml`. Code gets patient-hours through `sepsis.data.splits.load_project_split()` and `load_patient_hours(hospitals, patient_ids)`. The second checks every requested patient against the verified split file, refuses test patients, reads only those patients from the cache and fails if any are missing from it.
 
+6. Replay the baseline policies (NONE, ALL, AS_RECORDED) on a finished B2 run. `configs/replay_b2.yaml` names the source run (it must exist under `experiments/runs/`) and a new run id per policy. The CLI refits the source run's models, replays every dev patient with labs hidden until requested, scores each policy with the official scorer and appends one LOG row each, with labs per patient-day filled in. It refuses to log anything unless ALL reproduces the source run and AS_RECORDED equals ALL (ADR-0009). It takes about an hour.
+   ```bash
+   python -m sepsis.replay.run_policies configs/replay_b2.yaml
+   ```
+
 ## Test and lint
 Run these after every change:
 ```bash

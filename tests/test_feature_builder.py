@@ -85,7 +85,7 @@ def test_with_blocks(config: dict) -> None:
     core_only = with_blocks(config, ["shock_index", "vital_lags"])
     enabled = {
         name
-        for section in ("core", "extras")
+        for section in ("core", "extras", "signatures")
         for name, block in core_only[section].items()
         if block["enabled"]
     }

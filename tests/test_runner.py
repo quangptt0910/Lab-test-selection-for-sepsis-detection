@@ -504,3 +504,21 @@ def test_parallel_setups_give_the_same_run_as_serial(toy: dict) -> None:
         ).read_text()
     meta = json.loads((runs / "toy-parallel" / "meta.json").read_text())
     assert meta["setup_jobs"] == 3
+
+
+def test_a_signature_run_builds_and_records_its_signature_columns(toy: dict) -> None:
+    features = {
+        "hand_crafted": ["shock_index", "partial_sofa", "sirs", "hours_since_panel"],
+        "signatures": ["sig_partial_sofa"],
+        "lab_masking_p": 0.3,
+    }
+    assert _main(toy, experiment(toy["root"], id="toy-sig", features=features)) == 0
+    run = toy["root"] / "experiments" / "runs" / "toy-sig"
+    columns = json.loads((run / "feature_columns.json").read_text(encoding="utf-8"))
+    words = ("1", "2", "12", "112", "122")
+    assert [c for c in columns if c.startswith("sig_")] == [
+        f"sig_partial_sofa_partial_sofa_{w}" for w in words
+    ]
+    resolved = load_yaml(run / "resolved" / "features.yaml")
+    assert resolved["signatures"]["sig_partial_sofa"]["enabled"]
+    assert not resolved["signatures"]["sig_vitals"]["enabled"]
