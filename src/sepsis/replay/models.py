@@ -10,7 +10,8 @@ The threshold is the run's frozen one (`<run>/<setup>/thresholds.json`), never r
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import pandas as pd
@@ -19,8 +20,9 @@ from sepsis.action.policy import Policy
 from sepsis.eval import run_experiment
 from sepsis.eval.refit import check_against_run, load_run, refit_plan
 from sepsis.eval.runner import plan_setup
+from sepsis.eval.scorer import score, score_by_hospital
 from sepsis.features.builder import with_blocks
-from sepsis.replay.engine import ReplayResult, replay
+from sepsis.replay.engine import ReplayResult, labs_per_patient_day, replay, request_shares
 from sepsis.risk.base import RiskModel
 
 
@@ -79,15 +81,25 @@ def replay_models(
 
 
 def replay_setup(
-    run_dir: Path, setup: str, policy: Policy, *, dev: run_experiment.DevData | None = None
+    run_dir: Path,
+    setup: str,
+    policy: Policy,
+    *,
+    dev: run_experiment.DevData | None = None,
+    models: Sequence[ReplayModel] | None = None,
 ) -> ReplayResult:
-    """Replay every scored patient of `setup` under `policy`, each with its own fold's model."""
+    """Replay every scored patient of `setup` under `policy`, each with its own fold's model.
+
+    `models` (from `replay_models`) skips the refit, so several policies share one set of models.
+    """
     run_dir = Path(run_dir)
     dev = _dev(run_dir, dev)
     settings = dev.settings
     features = with_blocks(settings.features, list(settings.blocks))
+    if models is None:
+        models = replay_models(run_dir, setup, dev=dev)
     parts = []
-    for item in replay_models(run_dir, setup, dev=dev):
+    for item in models:
         hours = dev.hours[dev.hours["patient_id"].isin(item.scored_ids)]
         parts.append(
             replay(
@@ -123,3 +135,25 @@ def by_hospital(result: ReplayResult, split: pd.DataFrame) -> dict[str, ReplayRe
             mine(result.predictions), mine(result.requests), mine(result.reveal_rows)
         )
     return out
+
+
+def _metrics(scores: object, part: ReplayResult) -> dict[str, float | None]:
+    return {
+        **asdict(scores),  # type: ignore[call-overload]
+        "labs_per_patient_day": labs_per_patient_day(part.requests, part.predictions),
+        **request_shares(part.requests),
+    }
+
+
+def score_replay(
+    result: ReplayResult, setup: str, dev: run_experiment.DevData
+) -> dict[str, dict[str, float | None]]:
+    """Official scores and test burden of one setup's replay, under the runner's `scores.json`
+    keys: `A_to_B` / `B_to_A`, or `mix_A` and `mix_B` (scored apart, ADR-0004)."""
+    patients = set(result.predictions["patient_id"])
+    labels = dev.labels[dev.labels["patient_id"].isin(patients)]
+    if setup != "mix":
+        return {setup: _metrics(score(labels, result.predictions), result)}
+    scores = score_by_hospital(labels, result.predictions)
+    parts = by_hospital(result, dev.split)
+    return {f"mix_{h}": _metrics(scores[h], parts[h]) for h in sorted(scores)}
