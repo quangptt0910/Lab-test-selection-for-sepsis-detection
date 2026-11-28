@@ -20,3 +20,6 @@ Setups are defined in ADR-0004. `eval` is `dev` for every development run and `t
 | b2-012 | 2026-11-22 | 725518f | configs/b2_012_seed2.yaml | dev | 0.303 | 0.309 | 0.419 | 0.361 | 0.807 | — | b2-001 with seed 2 (seed repeat, M4-1) |
 | b3-011 | 2026-11-22 | 725518f | configs/b3_011_seed1.yaml | dev | 0.303 | 0.304 | 0.419 | 0.375 | 0.809 | — | b3-002 with seed 1 (seed repeat, M4-1) |
 | b3-012 | 2026-11-22 | 725518f | configs/b3_012_seed2.yaml | dev | 0.305 | 0.323 | 0.418 | 0.369 | 0.811 | — | b3-002 with seed 2 (seed repeat, M4-1) |
+| r-none-001 | 2026-11-28 | 13a22af | configs/replay_b2.yaml | dev | 0.268 | 0.166 | 0.337 | 0.262 | 0.761 | 0.0 | M5-2 baseline policies; source b2-001; labs/pt-day A→B 0.0, B→A 0.0, mix→A 0.0, mix→B 0.0; unavailable rate A→B —, B→A —, mix→A —, mix→B — |
+| r-all-001 | 2026-11-28 | 13a22af | configs/replay_b2.yaml | dev | 0.309 | 0.314 | 0.426 | 0.363 | 0.807 | 168.0 | M5-2 baseline policies; source b2-001; labs/pt-day A→B 168.0, B→A 168.0, mix→A 168.0, mix→B 168.0; unavailable rate A→B 0.642, B→A 0.525, mix→A 0.525, mix→B 0.642 |
+| r-asrec-001 | 2026-11-28 | 13a22af | configs/replay_b2.yaml | dev | 0.309 | 0.314 | 0.426 | 0.363 | 0.807 | 11.6 | M5-2 baseline policies; source b2-001; labs/pt-day A→B 9.1, B→A 14.1, mix→A 14.1, mix→B 9.1; unavailable rate A→B 0.000, B→A 0.000, mix→A 0.000, mix→B 0.000 |
